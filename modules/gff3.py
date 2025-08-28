@@ -697,21 +697,24 @@ def gff3_to_fasta(args):
             if not featureType in gff3.ftypes:
                 raise ValueError(f"'{featureType}' not found within '{args.gff3File}'")
             
-            for parentFeature in gff3.ftypes[featureType]:
+            for parentFeatureID in gff3.ftypes[featureType]:
                 # Pick out the longest representative for this feature
-                feature = gff3.longest_feature(parentFeature)
+                feature = gff3.longest_feature(parentFeatureID)
                 
                 # Format the sequence(s)
                 if "exon" in args.types:
                     exonSequence = feature.as_gene_model(fasta, "exon")
+                    exonSequence.description = parentFeatureID # propagate the original ID, not the representative
                 else:
                     exonSequence = None
                 
                 if "CDS" in args.types or "protein" in args.types:
                     cdsSequence = feature.as_gene_model(fasta, "CDS")
+                    cdsSequence.description = parentFeatureID
                     
                     if "protein" in args.types:
                         proteinSequence = cdsSequence.translate(args.translationTable)
+                        proteinSequence.description = parentFeatureID
                     else:
                         proteinSequence = None
                 else:
