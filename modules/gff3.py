@@ -1,21 +1,30 @@
 #! python3
 
-import re, os, math
+import os, math
 from pandas import Series
 from ncls import NCLS
 from collections import Counter
 
-from .parsing import read_gz_file
+from .parsing import read_gz_file, write_conditionally
+from .fasta import FASTATarium, Sequence
 
 class GFF3Feature:
     IMMUTABLE = ["ID", "ftype"] # these attributes should never change once set
-    def __init__(self, ID, ftype, start=None, end=None, strand=None, contig=None, children=None, parents=None):
+    HEADER_FORMAT = ["contig", "source", "ftype", "start", "end", "score", "strand", "frame", "attributes"]
+    CONTROLLED_ATTRIBUTES = ["ID", "Parent"] # these attributes are controlled by the GFF3Feature class
+    
+    def __init__(self, ID, ftype, start=None, end=None, strand=None, contig=None,
+                 source=None, score=None, frame=None, attributes=None, children=None, parents=None):
         self.ID = ID
         self.ftype = ftype
         self.start = start
         self.end = end
         self.strand = strand
         self.contig = contig
+        self.source = source
+        self.score = score
+        self.frame = frame
+        self.attributes = attributes
         
         self._children = []
         self.children = children
@@ -109,6 +118,74 @@ class GFF3Feature:
             self._strand = None
     
     @property
+    def source(self):
+        if self._source != None:
+            return self._strand
+        else:
+            return "."
+    
+    @source.setter
+    def source(self, value):
+        if value == None:
+            pass
+        elif not isinstance(value, str):
+            raise ValueError(f"GFF3 source must be a string, not {type(value)}")
+        self._source = value
+    
+    @property
+    def score(self):
+        if self._score != None:
+            return self._score
+        else:
+            return "."
+    
+    @source.setter
+    def score(self, value):
+        self._score = value
+    
+    @property
+    def frame(self):
+        if self._frame != None:
+            return self._frame
+        else:
+            return "."
+    
+    @frame.setter
+    def frame(self, value):
+        ACCEPTED_FRAMES = ["0", "1", "2", "."] # "." might represent unknown or irrelevant frame
+        if value != None:
+            if not value in ACCEPTED_FRAMES:
+                raise ValueError(f"Frame value '{value}' is not recognised; should be one of {ACCEPTED_FRAMES}")
+            self._frame = value
+        else:
+            self._frame = None
+    
+    @property
+    def attributes(self):
+        # Get the base of this attributes dict
+        if self._attributes == None:
+            attrDict = {}
+        else:
+            attrDict = self._attributes
+        
+        # Set controlled attributes
+        attrDict["ID"] = self.ID
+        if len(self.parents) != 0:
+            attrDict["Parent"] = ",".join(self.parents)
+        return attrDict
+    
+    @attributes.setter
+    def attributes(self, value):
+        if value == None:
+            self._attributes = None
+        else:
+            if not isinstance(value, dict):
+                raise TypeError(f"Attributes value must a dict, not '{type(value)}'")
+            cleanedValue = { k:v for k,v in value.items() if not k in GFF3Feature.CONTROLLED_ATTRIBUTES }
+            
+            self._attributes = cleanedValue
+    
+    @property
     def children(self):
         return self._children
     
@@ -132,25 +209,115 @@ class GFF3Feature:
         self.__dict__.setdefault(childFeature.ftype, [])
         self.__dict__[childFeature.ftype].append(childFeature)
     
-    def start_and_end(self, featureType):
+    def find_with_children(self, attribute, foundChildren=None):
         '''
-        Gets the start (leftmost) and end (rightmost) coordinates of the specified feature type
+        Finds ("catches") all children contained under this feature which have the specified attribute.
         
         Parameters:
-            featureType -- a string indicating an attribute that this feature should have.
-                           For example, if you want to get the start and end of the CDS children,
-                           you would provide "CDS" as the featureType.
+            attribute -- a string indicating an attribute that a child feature should have.
+                         For example, to retrieve all "CDS" children at any level under this
+                         feature, you would provide "CDS" as the attribute.
+            foundChildren -- a list that stores values during recursion, or None for the top-level
+                             recursion.
         '''
-        if not hasattr(self, featureType):
-            raise ValueError(f"Feature type '{featureType}' does not exist in this '{self.ftype}' GFF3Feature")
+        if foundChildren is None:
+            foundChildren = []
         
-        leftmost, rightmost = math.inf, -math.inf
-        for child in getattr(self, featureType):
-            if child.start < leftmost:
-                leftmost = child.start
-            if child.end > rightmost:
-                rightmost = child.end
-        return leftmost, rightmost
+        if len(self.children) != 0:
+            for child in self.children:
+                if hasattr(child, attribute):
+                    foundChildren.append(child)
+                else:
+                    return child.find_with_children(attribute, foundChildren)
+        return foundChildren
+    
+    def length(self, attribute):
+        '''
+        Sums the length of all .attribute children contained under this feature.
+        
+        Parameters:
+            attribute -- a string indicating the attribute under which children are indexed
+        Returns
+            length -- the summed length of children
+        '''
+        if not hasattr(self, attribute):
+            return None
+        thisLength = 0
+        for child in getattr(self, attribute):
+            thisLength += (child.end - child.start + 1)
+        return thisLength
+    
+    def format(self, recursion=None):
+        '''
+        This method will attempt to render a GFF3-correct format of the
+        data this GFF3Feature contains. Several assumptions are made which, if you
+        haven't done anything truly weird, will hold true.
+        '''
+        if recursion == None:
+            recursion = []
+        
+        # Depth-first formatting of details
+        recursion.append(str(self))
+        for child in self.children:
+            child.format(recursion)
+        return "\n".join(recursion) + "\n"
+    
+    def as_sequence(self, fastaObj):
+        '''
+        Making use of the class objects defined in this repository, obtains
+        the corresponding sequence portion identified by this GFF3Feature.
+        
+        Parameters:
+            fastaObj -- a FASTATarium or Sequence object
+        Returns:
+            seqObj -- a Sequence object with start and end defined by
+                      self.start and self.end (and optionally self.contig)
+        '''
+        if hasattr(fastaObj, "isFASTATarium") and fastaObj.isFASTATarium:
+            return fastaObj(self.contig, self.start-1, self.end) # counteract 1-based GFF3 numbering
+        elif hasattr(fastaObj, "isSequence") and fastaObj.isSequence:
+            return fastaObj[self.start-1:self.end] # counteract as well
+        else:
+            raise TypeError(f"Cannot obtain '{type(fastaObj)}' type as sequence")
+    
+    def as_gene_model(self, fastaObj, sequenceType="CDS"):
+        '''
+        Making use of the class objects defined in this repository, this function
+        will order children of CDS or exon type and format this as a Sequence
+        object corresponding to the annotation this feature represents.
+        '''
+        ACCEPTED_TYPES = ["CDS", "exon"]
+        if not sequenceType in ACCEPTED_TYPES:
+            raise ValueError(f"Feature cannot be ordered by '{sequenceType}'; must be in the list '{ACCEPTED_TYPES}'")
+        if not hasattr(self, sequenceType):
+            raise ValueError(f"'{self.ID}' lacks any children with '{sequenceType}' type")
+        
+        # Get the sequence as a string
+        startingFrame = None
+        sequence = ""
+        for subFeature in sorted(getattr(self, sequenceType), key = lambda x: (x.start, x.end)):
+            sequence += str(subFeature.as_sequence(fastaObj))
+            if startingFrame == None: # capture the first frame for +ve strand features
+                startingFrame = subFeature.frame
+        if self.strand == "-":
+            'Sort is from genomic left->right; first exon of a -ve strand feature is the rightmost'
+            startingFrame = subFeature.frame
+        
+        # Convert to Sequence object
+        seqObj = Sequence(self.ID, sequence, startingFrame)
+        
+        # Reverse complement if necessary
+        if self.strand == "-":
+            seqObj = seqObj.reverse_complement()
+        
+        return seqObj
+    
+    def __str__(self):
+        return "\t".join([
+            str(getattr(self, x)) if x != "attributes" else
+            ";".join([ f"{k}={v}" for k,v in getattr(self, x).items() ])
+            for x in GFF3Feature.HEADER_FORMAT
+        ])
     
     def __repr__(self):
         reprPairs = []
@@ -178,26 +345,26 @@ class GFF3Tarium:
     }
     
     @staticmethod
-    def clean_attributes(attributes):
+    def format_attributes(attributes):
         '''
-        Cleans the attributes string from a GFF3 file by removing unnecessary
-        characters and ensuring it is properly formatted.
+        Despite how overengineered this may seem, it is necessary to handle cases where multiple redundant
+        semi-colons exist, or when e.g., chemical names are embedded which may contain semi colons, not as a 
+        delimiter, but as part of the value.
+        '''
+        splitAttributes = []
+        for a in attributes.strip("\r\n\t; ").split("="):
+            if ";" in a:
+                splitAttributes += a.rsplit(";", maxsplit=1)
+            else:
+                splitAttributes.append(a)
         
-        Parameters:
-            attributes -- a string containing the attributes from a GFF3 line.
-        Returns:
-            cleanedAttributes -- a cleaned string with unnecessary characters removed.
-        '''
-        return attributes.strip("\r\n\t;'\" ")
+        return { splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2) }
     
     def __init__(self, fileLocation):
         self.fileLocation = fileLocation
         self.ftypes = {}
         self.features = {}
         self.contigs = set()
-        
-        self.idRegex = re.compile(r"(^|;)ID=(.+?)(;|$)")
-        self.parentRegex = re.compile(r"(^|;)Parent=(.+?)(;|$)")
         
         self.ncls = None
         self._nclsType = None
@@ -219,36 +386,49 @@ class GFF3Tarium:
         
         self._fileLocation = value
     
-    @staticmethod
-    def longest_isoform(geneFeature):
+    def longest_feature(self, feature):
         '''
-        We pick out the representative gene based on length. If length is identical,
-        we'll end up picking the entry listed first in the gff3 file since our > condition
-        won't be met. I doubt this will happen much or at all though.
-        '''
-        if not hasattr(geneFeature, "mRNA"):
-            raise ValueError("Longest isoform finding can only occur on features that have mRNA children")
+        Receives a feature (either by its .ID or by its actual self) and finds
+        the longest feature indexed under (and including) itself according to summed
+        CDS (first preference) or exon length.
         
-        longestMrna = [None, 0]
-        for mrnaFeature in geneFeature.mRNA:
-            mrnaLen = 0
-            
-            # Determine the features to use for length calculation
-            if hasattr(mrnaFeature, "CDS"):
-                features = mrnaFeature.CDS
-            elif hasattr(mrnaFeature, "exon"):
-                features = mrnaFeature.exon
+        Note that by checking its own self, this function can be used on any feature
+        to simply find the longest representative. If you input a 'gene' feature, this
+        function will likely return the longest mRNA child feature. If you input an 
+        mRNA child feature, this function will likely return itself.
+        
+        Parameters:
+            feature -- a GFF3Feature object OR the .ID of an object indexed by
+                       this GFF3Tarium object.
+        Returns:
+            longestFeature -- a GFF3Feature object indexed by this GFF3Tarium object
+                              which has the longest summed CDS or exon length.
+        '''
+        if isinstance(feature, str):
+            feature = self[feature]
+        
+        # Determine the features to use for length calculation
+        if hasattr(feature, "CDS"):
+            featureLengths = [[feature, feature.length("CDS")]]
+        elif hasattr(feature, "exon"):
+            featureLengths = [[feature, feature.length("exon")]]
+        else:
+            childFeatures = feature.find_with_children("CDS")
+            if len(childFeatures) != 0:
+                featureLengths = [ [f, f.length("CDS")] for f in childFeatures ]
             else:
-                features = []
-            
-            # Sum the lengths of the CDS (or exon) features
-            for subFeature in features:
-                mrnaLen += (subFeature.end - subFeature.start + 1)
-            
-            # Update the longest mRNA if this one is longer
-            if mrnaLen > longestMrna[1]:
-                longestMrna = [mrnaFeature, mrnaLen]
-        return longestMrna[0]
+                childFeatures = feature.find_with_children("exon")
+                if len(childFeatures) != 0:
+                    featureLengths = [ [f, f.length("exon")] for f in childFeatures ]
+                else:
+                    featureLengths = []
+        
+        # Find the longest feature
+        longest = [None, 0]
+        for feature, length in featureLengths:
+            if length > longest[1]:
+                longest = [feature, length]
+        return longest[0]
     
     def _get_unique_feature_id(self, inputID):
         ongoingCount = 1
@@ -290,27 +470,28 @@ class GFF3Tarium:
                 start = int(start)
                 end = int(end)
                 ftype = GFF3Feature.make_ftype_case_appropriate(ftype)
-                attributes = GFF3Tarium.clean_attributes(attributes) # necessary for regex to work properly
+                attributes = GFF3Tarium.format_attributes(attributes)
                 
                 # Establish or populate tracking containers
                 self.ftypes.setdefault(ftype, [])
                 self.contigs.add(contig)
                 
                 # Get the ID attribute
-                featureID = [ x[1] for x in self.idRegex.findall(attributes) ] # x == [startCharacter, ID, endCharacter]
-                if len(featureID) == 1:
-                    featureID = featureID[0]
-                elif len(featureID) == 0:
+                if not "ID" in attributes:
                     featureID = f"{ftype}.{len(self.ftypes[ftype]) + 1}"
                 else:
-                    raise ValueError(f"GFF3 parsing failed since line #{lineCount} (\"{line}\") has multiple IDs")
+                    featureID = attributes["ID"]
                 
-                # Get the parent ID(s)
-                parentIDs = [ x[1] for x in self.parentRegex.findall(attributes) ] # x == [startCharacter, ID, endCharacter]
+                # Get the parent ID(s) attribute
+                if not "Parent" in attributes:
+                    parentIDs = []
+                else:
+                    parentIDs = [ x.strip() for x in attributes["Parent"].split(",") ]
                 
                 # Create a feature object
                 feature = GFF3Feature(ID=featureID, ftype=ftype,
                                       start=start, end=end, strand=strand,
+                                      source=source, score=score, frame=frame, attributes=attributes,
                                       contig=contig, children=[], parents=parentIDs)
                 
                 # Index the feature if it doesn't already exist
@@ -508,5 +689,39 @@ def gff3_stats(args):
     return None
 
 def gff3_to_fasta(args):
-    return None
-
+    fasta = FASTATarium(args.fastaFile)
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    with write_conditionally(args.outputFileNames["exon"]) as exonOut, write_conditionally(args.outputFileNames["cds"]) as cdsOut, write_conditionally(args.outputFileNames["protein"]) as protOut:
+        for featureType in args.features:
+            if not featureType in gff3.ftypes:
+                raise ValueError(f"'{featureType}' not found within '{args.gff3File}'")
+            
+            for parentFeature in gff3.ftypes[featureType]:
+                # Pick out the longest representative for this feature
+                feature = gff3.longest_feature(parentFeature)
+                
+                # Format the sequence(s)
+                if "exon" in args.types:
+                    exonSequence = feature.as_gene_model(fasta, "exon")
+                else:
+                    exonSequence = None
+                
+                if "CDS" in args.types or "protein" in args.types:
+                    cdsSequence = feature.as_gene_model(fasta, "CDS")
+                    
+                    if "protein" in args.types:
+                        proteinSequence = cdsSequence.translate(args.translationTable)
+                    else:
+                        proteinSequence = None
+                else:
+                    cdsSequence = None
+                    proteinSequence = None
+                
+                # Write to file
+                if args.outputFileNames["exon"]:
+                    exonOut.write(exonSequence.format())
+                if args.outputFileNames["cds"]:
+                    cdsOut.write(cdsSequence.format())
+                if args.outputFileNames["protein"]:
+                    protOut.write(proteinSequence.format())

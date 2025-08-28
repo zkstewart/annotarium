@@ -72,8 +72,12 @@ def validate_g_to_fasta(args):
     for seqType, outputFileName in args.outputFileNames.items():
         if os.path.exists(outputFileName):
             raise FileExistsError(f"--types {seqType} output '{outputFileName}' already exists!")
+    
     # Ensure that translationTable value is sensible
-    if args.translationTable < 1:
-        raise ValueError('--translation value must be greater than 1. Fix this and try again.')
-    elif args.translationTable > 31:
-        raise ValueError('--translation value must be less than 31. Fix this and try again.')
+    if args.translationTable < 0:
+        raise ValueError("--translation should be given a value >= 0")
+    if args.translationTable in [7, 8, 17, 18, 19, 20]:
+        raise ValueError(f"--translation {args.translationTable} is not a valid NCBI table")
+    if args.translationTable > 33:
+        raise ValueError("--translation was given a value > 33; this is not a valid NCBI table")
+    

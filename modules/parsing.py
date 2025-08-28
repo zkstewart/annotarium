@@ -1,7 +1,7 @@
 #! python3
 
 import gzip, codecs
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 def get_codec(fileName):
     try:
@@ -28,3 +28,22 @@ def read_gz_file(filename):
     else:
         with open(filename, "r", encoding=get_codec(filename)) as f:
             yield f
+
+class Emptyfile(object):
+    def write(self, data):
+        pass # ignore the data
+    def __enter__(self): return self
+    def __exit__(*x): pass
+
+@contextmanager
+def write_conditionally(fileName):
+    if fileName == None:
+        empty = Emptyfile()
+        yield empty
+    else:
+        if fileName.endswith(".gz"):
+            with gzip.open(fileName, "wt") as f:
+                yield f
+        else:
+            with open(fileName, "w") as f:
+                yield f
