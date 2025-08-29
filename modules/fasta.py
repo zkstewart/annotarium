@@ -1,9 +1,83 @@
 #! python3
 
 import os
-from Bio.Data import CodonTable
+from copy import deepcopy
+from itertools import product
+from Bio.Data import CodonTable, IUPACData
 
 from .parsing import read_gz_file
+
+class TranslationTable:
+    '''
+    This namespace behaves like a singleton. It should maintain a single state
+    that is accessible throughout the program. This means we can derive an
+    up-to-date (according to Biopython) codon table on an as-needed basis
+    on the first call. Subsequent calls can retrieve the previously generated
+    and indexed codon table.
+    '''
+    _ambiguous = {
+        nuc: list(replacements)
+        for nuc, replacements in IUPACData.ambiguous_dna_values.items()
+        if (not nuc in ["X", "N"]) and (len(replacements) > 1)
+    }
+    _dict = {}
+    
+    def get_codons(tableNum):
+        '''
+        Formats a codon table as a dictionary where keys are codons and values are
+        amino acid residues. Automatically infers truncated, ambiguous and N
+        character-containing codons that lead to a single reliable translation product.
+        '''
+        # Return an already-built codons table
+        if tableNum in TranslationTable._dict:
+            return TranslationTable._dict[tableNum]
+        
+        # Start building a new table based on the simple Biopython table
+        try:
+            table = CodonTable.ambiguous_dna_by_id[tableNum]
+        except KeyError:
+            raise KeyError(f"{tableNum} is not a valid NCBI table number")
+        
+        codons = deepcopy(table.forward_table.forward_table) # don't touch the Bio data
+        codons.update({ codon:"*" for codon in table.stop_codons})
+        
+        # Derive inferrable truncated and N-containing codons
+        for c in [ "".join(x) for x in product(["A", "T", "C", "G"], repeat=3) ]:
+            for position in range(0, 3):
+                translations = set([
+                    v
+                    for k, v in codons.items()
+                    if k[:position] == c[:position]
+                    and k[position+1:] == c[position+1:]
+                ])
+                if len(translations) == 1:
+                    residue = translations.pop()
+                    if position == 2: # we can truncate a codon that is redundant at its end
+                        truncatedCodon = c[:position]
+                        codons[truncatedCodon] = residue
+                    nCodon = c[:position] + "N" + c[position+1:]
+                    codons[nCodon] = residue
+        
+        # Invert codons dictionary to group residue (key) to its codons (values)
+        inverted = { v: [] for v in codons.values() }
+        for k, v in codons.items():
+            inverted[v].append(k)
+        
+        # Derive inferrable ambiguous replacements
+        for residue, codonsList in inverted.items():
+            for codon in codonsList:
+                for position in range(0, len(codon)): # codon len may be < 3
+                    for ambiguousNuc, replacements in TranslationTable._ambiguous.items():
+                        isSameTranslation = all([
+                            codon[:position] + r + codon[position+1:] in codonsList
+                            for r in replacements
+                        ])
+                        if isSameTranslation:
+                            codons[codon[:position] + ambiguousNuc + codon[position+1:]] = residue
+        
+        # Singleton index and return the now-generated codons table
+        TranslationTable._dict[tableNum] = codons
+        return codons
 
 class Sequence:
     COMPLEMENT = {"A": "T", "a": "t",
@@ -92,9 +166,7 @@ class Sequence:
         '''
         # Get our codons table for translation
         try:
-            table = CodonTable.ambiguous_dna_by_id[tableNum]
-            codons = table.forward_table.forward_table
-            codons.update({ codon:"*" for codon in table.stop_codons})
+            codonTable = TranslationTable.get_codons(tableNum)
         except:
             raise ValueError(f"Translation table '{tableNum}' is not recognised by Biopython as a valid table number")
         
@@ -102,7 +174,7 @@ class Sequence:
         protein = []
         for i in range(self.frame, len(self.sequence), 3):
             codon = self.sequence[i:i+3]
-            protein.append(codons.get(codon.upper(), "X"))
+            protein.append(codonTable.get(codon.upper(), "X"))
         
         # Return the translation as a new object
         return Sequence(self.description, "".join(protein), self.frame)
