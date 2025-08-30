@@ -1,7 +1,7 @@
 #! python3
 
 import os, math
-from pandas import Series
+import pandas as pd
 from ncls import NCLS
 from collections import Counter
 
@@ -580,9 +580,9 @@ class GFF3Tarium:
                 ongoingCount += 1
         
         # Build the NCLS object
-        starts = Series(starts)
-        ends = Series(ends)
-        ids = Series(ids)
+        starts = pd.Series(starts)
+        ends = pd.Series(ends)
+        ids = pd.Series(ids)
         ncls = NCLS(starts.values, ends.values, ids.values)
         
         # Associate it to this instance
@@ -686,6 +686,7 @@ class GFF3Tarium:
         )
 
 def gff3_stats(args):
+    raise NotImplementedError("gff3 stats mode not yet implemented")
     return None
 
 def gff3_to_fasta(args):
@@ -728,3 +729,51 @@ def gff3_to_fasta(args):
                     cdsOut.write(cdsSequence.format())
                 if args.outputFileNames["protein"]:
                     protOut.write(proteinSequence.format())
+
+def gff3_to_tsv(args):
+    def get_value(feature, key):
+        try:
+            return getattr(feature, key)
+        except:
+            try:
+                return feature.attributes[key]
+            except:
+                return None
+    
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Perform validations that require gff3 to be parsed
+    if not args.forEach in gff3.ftypes:
+        raise ValueError(f"-forEach value '{value}' is not a feature type in your GFF3")
+    
+    # Run the query operation
+    mapping = {}
+    for featureID in gff3.ftypes[args.forEach]:
+        feature = gff3[featureID]
+        
+        # Get value for -map key
+        mapValue = get_value(feature, args.map)
+        if mapValue is None:
+            raise KeyError(f"-map value '{args.map}' not found for a '{args.forEach}' feature with start={feature.start} end={feature.end}")
+        mapping.setdefault(mapValue, { k:{} for k in args.to }) # use dict as a sorted set
+        
+        # Get values for all -to keys
+        for toKey in args.to:
+            toValue = get_value(feature, toKey)
+            mapping[mapValue][toKey].setdefault(None if toValue is None else str(toValue), None)
+    
+    # Collapse key:value pairings
+    for mapKey in mapping.keys():
+        collapsedValue = {}
+        for toKey, valuesDict in mapping[mapKey].items():
+            values = list(valuesDict.keys())
+            if values == [None]:
+                collapsedValue[toKey] = args.nullChar # replace None with the nullChar
+            else:
+                collapsedValue[toKey] = args.sepChar.join([ x for x in values if not x is None ]) # purge any None values
+        mapping[mapKey] = collapsedValue
+    
+    # Convert to pandas dataframe to quickly tabulate
+    idMapDF = pd.DataFrame.from_dict(mapping, orient="index")
+    idMapDF.to_csv(args.outputFileName, sep="\t", index_label=args.map, header=not args.noHeader)
+    

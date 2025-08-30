@@ -8,17 +8,16 @@ def validate_f(args):
     args.fastaFile = os.path.abspath(args.fastaFile)
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-i {args.fastaFile}) does not exist!")
-    
-    # Validate output file name
-    args.outputFileName = os.path.abspath(args.outputFileName)
-    if os.path.exists(args.outputFileName):
-        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_f_stats(args):
     '''
     Validation for arguments used in "fasta stats" mode.
     '''
-    pass # no specific validation needed for this mode
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_g(args):
     '''
@@ -80,4 +79,12 @@ def validate_g_to_fasta(args):
         raise ValueError(f"--translation {args.translationTable} is not a valid NCBI table")
     if args.translationTable > 33:
         raise ValueError("--translation was given a value > 33; this is not a valid NCBI table")
-    
+
+def validate_g_to_tsv(args):
+    '''
+    Validation for arguments used in "gff3 to tsv" mode.
+    '''
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")

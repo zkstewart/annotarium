@@ -1,11 +1,15 @@
 #! python3
 
-import os
+import os, locale
+import pandas as pd
 from copy import deepcopy
 from itertools import product
 from Bio.Data import CodonTable, IUPACData
 
 from .parsing import read_gz_file
+from .stats import N50, count_lowercase, count_char
+
+locale.setlocale(locale.LC_ALL, "")
 
 class TranslationTable:
     '''
@@ -200,6 +204,9 @@ class Sequence:
         elif isinstance(value, slice):
             return Sequence(self.description, self.sequence[value]) # slice returns a new object
     
+    def __len__(self):
+        return len(self.sequence)
+    
     def __str__(self):
         return self.sequence
     
@@ -349,4 +356,51 @@ class FASTATarium:
         )
 
 def fasta_stats(args):
-    return None
+    def locale_format(value):
+        return locale.format_string("%d", value, grouping=True)
+    
+    fasta = FASTATarium(args.fastaFile)
+    
+    # Obtain stat values for each contig
+    recordStats = {}
+    for record in fasta:
+        recordStats[record.id] = {}
+        recordStats[record.id]["length"] = len(record)
+        recordStats[record.id]["num_lowercase"] = count_lowercase(str(record))
+        recordStats[record.id]["num_n"] = count_char(str(record), "N")
+    
+    # Tabulate statistics
+    statsDF = pd.DataFrame.from_dict(recordStats, orient="index")
+    
+    # Calculate additional statistics
+    genomeSize = statsDF["length"].sum()
+    numSeqs = len(statsDF)
+    shortest = statsDF["length"].min()
+    longest = statsDF["length"].max()
+    n50 = N50(statsDF["length"].to_list())
+    medianStat = int(statsDF["length"].median())
+    meanStat = int(statsDF["length"].mean())
+    lowercaseSize = statsDF["num_lowercase"].sum()
+    nSize = statsDF["num_n"].sum()
+    
+    # Format and present statistics
+    stats = [
+        f"Genome size: {locale_format(genomeSize)}",
+        f"Number of sequences: {locale_format(numSeqs)}",
+        f"Shortest: {locale_format(shortest)}",
+        f"Longest: {locale_format(longest)}",
+        f"N50: {locale_format(n50)}",
+        f"Median: {locale_format(medianStat)}",
+        f"Mean: {locale_format(meanStat)}",
+        f"Lowercase residues: {locale_format(lowercaseSize)}",
+        f"N residues: {locale_format(nSize)}"
+    ]
+    print("\n".join(stats))
+    
+    # Write to file if requested
+    if args.outputFileName != None:
+        statsDF.loc["#Total"] = statsDF.sum()
+        statsDF.loc["#N50"] = [n50, None, None]
+        statsDF.loc["#Median"] = [medianStat, None, None]
+        statsDF.loc["#Mean"] = [meanStat, None, None]
+        statsDF.to_csv(args.outputFileName, sep="\t")

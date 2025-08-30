@@ -10,10 +10,10 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, \
-    validate_g, validate_g_stats, \
+    validate_g, validate_g_stats, validate_g_to_tsv, \
     validate_g_to, validate_g_to_fasta
 from modules.fasta import fasta_stats
-from modules.gff3 import gff3_stats, gff3_to_fasta
+from modules.gff3 import gff3_stats, gff3_to_fasta, gff3_to_tsv
 from _version import __version__
 
 def main():
@@ -55,9 +55,9 @@ def main():
     fstatsparser.add_argument("-i", dest="fastaFile",
                               required=True,
                               help="Location of FASTA file")
-    fstatsparser.add_argument("-o", dest="outputFileName",
-                              required=True,
-                              help="Location to write statistics output")
+    fstatsparser.add_argument("--out", "-o", dest="outputFileName",
+                              required=False,
+                              help="Optionally, write statistics output to file")
     
     # GFF3 subparser
     gparser = subparsers.add_parser("gff3",
@@ -132,6 +132,46 @@ def main():
                             (default == 1 i.e., Standard Code)""",
                             default=1)
     
+    # GFF3 > to > TSV mode
+    gtotsvparser = subGFF3ToParsers.add_parser("tsv",
+                                               parents=[p],
+                                               add_help=False,
+                                               help="GFF3 to TSV conversion")
+    gtotsvparser.add_argument("-i", dest="gff3File",
+                              required=True,
+                              help="Location of GFF3 file")
+    gtotsvparser.add_argument("-o", dest="outputFileName",
+                              required=True,
+                              help="Location to write TSV output")
+    gtotsvparser.add_argument("-forEach", dest="forEach",
+                              required=True,
+                              help="""The value here should relate to any feature type in column 3 of
+                              the GFF3; examples include 'gene' or 'mRNA'.""")
+    gtotsvparser.add_argument("-map", dest="map",
+                              required=True,
+                              help="""A valid key that will be the left-most column and serve as a unique
+                              value to anchor other details""")
+    gtotsvparser.add_argument("-to", dest="to",
+                              required=True,
+                              nargs="+",
+                              help="""One or more valid keys separated with a space; each key should correspond
+                              to a GFF3 column or attribute value, and output columns will be based on the order
+                              provided herein""")
+    gtotsvparser.add_argument("--noHeader", dest="noHeader",
+                              required=False,
+                              action="store_true",
+                              help="Set this flag to omit the header row",
+                              default=False)
+    gtotsvparser.add_argument("--null", dest="nullChar",
+                              required=False,
+                              help="""Optionally, specify the character(s) used to denote a lack of 'map' value""",
+                              default="_")
+    gtotsvparser.add_argument("--sep", dest="sepChar",
+                              required=False,
+                              help="""Optionally, specify the character(s) used to separate multiple values of
+                              the same 'map' key""",
+                              default=";")
+    
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
@@ -139,7 +179,7 @@ def main():
         print("## annotarium.py - FASTA handling ##")
         validate_f(args)
         fmain(args)
-    elif args.mode == "gff3":
+    if args.mode == "gff3":
         print("## annotarium.py - GFF3 handling ##")
         validate_g(args)
         gmain(args)
@@ -168,6 +208,10 @@ def gmain(args):
             print("## GFF3 to FASTA conversion ##")
             validate_g_to_fasta(args)
             gff3_to_fasta(args)
+        if args.gff3ToMode == "tsv":
+            print("## GFF3 to TSV conversion ##")
+            validate_g_to_tsv(args)
+            gff3_to_tsv(args)
     
     print("GFF3 handling complete!")
 
