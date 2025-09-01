@@ -88,3 +88,12 @@ def validate_g_to_tsv(args):
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_g_to_gff3(args):
+    '''
+    Validation for arguments used in "gff3 to gff3" mode.
+    '''
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")

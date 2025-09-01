@@ -1,6 +1,6 @@
 #! python3
 
-def N50(numlist): 
+def N50(numlist):
   """ 
   Abstract: Returns the N50 value of the passed list of numbers. 
   Usage: N50(numlist) 

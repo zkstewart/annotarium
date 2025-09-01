@@ -1,7 +1,7 @@
 #! python3
 
 import gzip, codecs
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 
 def get_codec(fileName):
     try:

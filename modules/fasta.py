@@ -371,6 +371,7 @@ def fasta_stats(args):
     
     # Tabulate statistics
     statsDF = pd.DataFrame.from_dict(recordStats, orient="index")
+    statsDF.sort_values(by="length", ascending=False, inplace=True)
     
     # Calculate additional statistics
     genomeSize = statsDF["length"].sum()

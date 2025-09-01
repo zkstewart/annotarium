@@ -10,10 +10,10 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, \
-    validate_g, validate_g_stats, validate_g_to_tsv, \
-    validate_g_to, validate_g_to_fasta
+    validate_g, validate_g_stats, \
+    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3
 from modules.fasta import fasta_stats
-from modules.gff3 import gff3_stats, gff3_to_fasta, gff3_to_tsv
+from modules.gff3 import gff3_stats, gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from _version import __version__
 
 def main():
@@ -172,6 +172,18 @@ def main():
                               the same 'map' key""",
                               default=";")
     
+    # GFF3 > to > GFF3 mode
+    gtogff3parser = subGFF3ToParsers.add_parser("gff3",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="GFF3 to GFF3 reformatting")
+    gtogff3parser.add_argument("-i", dest="gff3File",
+                               required=True,
+                               help="Location of GFF3 file")
+    gtogff3parser.add_argument("-o", dest="outputFileName",
+                               required=True,
+                               help="Location to write GFF3 output")
+    
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
@@ -212,6 +224,10 @@ def gmain(args):
             print("## GFF3 to TSV conversion ##")
             validate_g_to_tsv(args)
             gff3_to_tsv(args)
+        if args.gff3ToMode == "gff3":
+            print("## GFF3 to GFF3 re-formatter ##")
+            validate_g_to_gff3(args)
+            gff3_to_gff3(args)
     
     print("GFF3 handling complete!")
 

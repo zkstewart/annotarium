@@ -14,7 +14,8 @@ class GFF3Feature:
     CONTROLLED_ATTRIBUTES = ["ID", "Parent"] # these attributes are controlled by the GFF3Feature class
     
     def __init__(self, ID, ftype, start=None, end=None, strand=None, contig=None,
-                 source=None, score=None, frame=None, attributes=None, children=None, parents=None):
+                 source=None, score=None, frame=None, attributes=None, children=None, parents=None,
+                 isInferred=False):
         self.ID = ID
         self.ftype = ftype
         self.start = start
@@ -32,6 +33,7 @@ class GFF3Feature:
                        else set(parents) if isinstance(parents, list) \
                        else set([parents]) if isinstance(parents, str) \
                        else set()
+        self.isInferred = isInferred # flag for checking if this feature was parsed or inferred
         self.isGFF3Feature = True # flag for easier type checking
     
     @staticmethod
@@ -120,7 +122,7 @@ class GFF3Feature:
     @property
     def source(self):
         if self._source != None:
-            return self._strand
+            return self._source
         else:
             return "."
     
@@ -139,7 +141,7 @@ class GFF3Feature:
         else:
             return "."
     
-    @source.setter
+    @score.setter
     def score(self, value):
         self._score = value
     
@@ -162,16 +164,17 @@ class GFF3Feature:
     
     @property
     def attributes(self):
-        # Get the base of this attributes dict
-        if self._attributes == None:
-            attrDict = {}
-        else:
-            attrDict = self._attributes
+        attrDict = {}
         
         # Set controlled attributes
         attrDict["ID"] = self.ID
         if len(self.parents) != 0:
             attrDict["Parent"] = ",".join(self.parents)
+        
+        # Add other attributes
+        if self._attributes != None:
+            attrDict.update(self._attributes)
+        
         return attrDict
     
     @attributes.setter
@@ -247,19 +250,31 @@ class GFF3Feature:
             thisLength += (child.end - child.start + 1)
         return thisLength
     
-    def format(self, recursion=None):
+    def format(self, alreadyFound, recursion=None):
         '''
         This method will attempt to render a GFF3-correct format of the
         data this GFF3Feature contains. Several assumptions are made which, if you
         haven't done anything truly weird, will hold true.
+        
+        alreadyFound should always be empty for the parent-level feature
+        
+        Parameters:
+            alreadyFound -- a set maintained by the calling function which tracks
+                            feature .ID values that have already been found/formatted.
+                            Necessary to accommodate multiparent features and prevent
+                            duplicate outputs.
         '''
+        # Recursion management
         if recursion == None:
             recursion = []
+        if self.ID in alreadyFound:
+            return
+        alreadyFound.add(self.ID)
         
         # Depth-first formatting of details
         recursion.append(str(self))
         for child in self.children:
-            child.format(recursion)
+            child.format(alreadyFound, recursion)
         return "\n".join(recursion) + "\n"
     
     def as_sequence(self, fastaObj):
@@ -334,6 +349,11 @@ class GFF3Feature:
         return "<{0};{1}>".format(";".join(reprPairs),
                                   f"children=[{', '.join([child.ID for child in self.children])}]")
 
+class UnsortedGff3Error(Exception):
+    pass
+class DuplicateFeatureError(Exception):
+    pass
+
 class GFF3Tarium:
     PARENT_INFERENCE = {
         "CDS": "mRNA",
@@ -360,17 +380,18 @@ class GFF3Tarium:
         
         return { splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2) }
     
-    def __init__(self, fileLocation):
+    def __init__(self, fileLocation, deduplicate=False):
         self.fileLocation = fileLocation
-        self.ftypes = {}
-        self.features = {}
-        self.contigs = set()
+        self.ftypes = {} # stores ftype:[featureIDs...]
+        self.parentFtypes = set() # stores keys in self.ftypes that point to parent-level features
+        self.features = {} # stores featureID:GFF3Feature
+        self.contigs = set() # stores unique feature .contig values
         
         self.ncls = None
         self._nclsType = None
         self._nclsIndex = None
         
-        self.parse_gff3(self.fileLocation)
+        self.parse_gff3(self.fileLocation, deduplicate)
         self.isGFF3Tarium = True # flag for easier type checking
     
     @property
@@ -440,12 +461,17 @@ class GFF3Tarium:
             ongoingCount += 1
         return featureID
     
-    def parse_gff3(self, gff3File):
+    def parse_gff3(self, gff3File, deduplicate=False):
         '''
         Parses a GFF3 file and populates the graph with features.
         
         Parameters:
-            gff3 -- a GFF3 object to parse and populate this graph with.
+            gff3File -- a string pointing to a GFF3 file location
+                        to parse and populate this object with.
+            deduplicate -- (OPTIONAL) a boolean indicating whether
+                           duplicate feature IDs should raise an error
+                           (False) or if we should automatically
+                           deduplicate feature IDs (True) to avoid errors
         '''
         # Reset the graph
         self.fileLocation = gff3File
@@ -485,6 +511,7 @@ class GFF3Tarium:
                 # Get the parent ID(s) attribute
                 if not "Parent" in attributes:
                     parentIDs = []
+                    self.parentFtypes.add(ftype)
                 else:
                     parentIDs = [ x.strip() for x in attributes["Parent"].split(",") ]
                 
@@ -503,25 +530,40 @@ class GFF3Tarium:
                     self.add(feature)
                 # Handle other duplicated feature types
                 else:
-                    "We assume that the GFF3 is unsorted if we reach this point, so we are detailing an existing feature"
-                    feature = self.features[featureID]
+                    existingFeature = self.features[featureID]
                     
-                    # Check that inferred details are correct
-                    if feature.ftype != ftype:
-                        raise ValueError(f"Unsorted GFF3 issue: Feature ID '{featureID}' has a different type '{feature.ftype}' than previously inferred '{ftype}'")
-                    if feature.contig != contig:
-                        raise ValueError(f"Unsorted GFF3 issue: Feature ID '{featureID}' has a different contig '{feature.contig}' than previously inferred '{contig}'")
+                    # Handle inferred features
+                    if existingFeature.isInferred:
+                        # Check that inferred details are correct
+                        if existingFeature.ftype != ftype:
+                            raise UnsortedGff3Error(f"Feature ID '{featureID}' has a different type '{ftype}' than previously inferred '{existingFeature.ftype}'")
+                        if existingFeature.contig != contig:
+                            raise UnsortedGff3Error(f"Feature ID '{featureID}' has a different contig '{contig}' than previously inferred '{existingFeature.contig}'")
+                        
+                        # Update feature details
+                        existingFeature.start = start
+                        existingFeature.end = end
+                        existingFeature.strand = strand
+                        existingFeature.source = source
+                        existingFeature.score = score
+                        existingFeature.frame = frame
+                        existingFeature.attributes = attributes
+                        existingFeature.parents.update(parentIDs) # add parents to existing set
+                        existingFeature.isInferred = False # turn off flag since we found the feature
+                        self.add(existingFeature) # re-add to ensure parents are updated correctly
                     
-                    # Update feature details
-                    feature.start = start
-                    feature.end = end
-                    feature.strand = strand
-                    feature.parents.update(parentIDs) # add parents to existing set
-                    self.add(feature) # re-add to ensure parents are updated correctly
+                    # Handle truly duplicated features
+                    else:
+                        if deduplicate:
+                            newFeatureID = f"{ftype}.{len(self.ftypes[ftype]) + 1}"
+                            feature.ID = newFeatureID # although ID should be "immutable" it is not added into this graph yet so this is acceptable
+                            self.add(feature)
+                        else:
+                            raise DuplicateFeatureError(f"Feature ID '{featureID}' occurs more than once in file '{self.fileLocation}'")
     
     def add(self, feature):
-        # Store feature within the graph
-        if not feature.ID in self.features: # only if it doesn't already exist
+        # Store a new feature within the graph
+        if not feature.ID in self.features:
             self.ftypes.setdefault(feature.ftype, []) # necessary if first occurrence of a subfeature preceeds its parent type
             self.ftypes[feature.ftype].append(feature.ID)
             self.features[feature.ID] = feature
@@ -535,8 +577,8 @@ class GFF3Tarium:
             else:
                 if feature.ftype in GFF3Tarium.PARENT_INFERENCE:
                     parentFeature = GFF3Feature(parentID, GFF3Tarium.PARENT_INFERENCE[feature.ftype],
-                                                contig=feature.contig,
-                                                children=[feature])
+                                                contig=feature.contig, children=[feature],
+                                                isInferred=True)
                     self.add(parentFeature)
                 else:
                     raise ValueError("Your GFF3 is not sorted in top-down hierarchical order which has caused an error; " +
@@ -650,9 +692,86 @@ class GFF3Tarium:
         if len(danglingFeatures) != 0:
             print(f"WARNING: Parsing '{self.fileLocation}' resulted in dangling features with no parents or children, " +
                   "which is likely due to an unsorted or incorrectly formatted GFF3 file. This may cause issues with " +
-                  "psQTL's functionality.")
+                  "downstream annotarium functionality.")
             for ftype, count in danglingFeatures.items():
                 print(f"# {count} '{ftype}' feature{'s have' if count > 1 else ' has'} no parents or children")
+    
+    @property
+    def parents(self):
+        '''
+        Iterates through this GFF3Tarium object to yield all features that are
+        at the parent level. Beginning with self.parentFtypes, a set which
+        only contains ftypes with at least one parent-level feature, we loop
+        through all features under those ftype(s) and yield features which
+        lack any parents.
+        '''
+        for ftype in sorted(self.parentFtypes):
+            for featureID in self.ftypes[ftype]:
+                feature = self[featureID]
+                if len(feature.parents) == 0: # we don't trust the GFF3 file to have an ftype ALWAYS be a parent or a child
+                    yield feature
+    
+    def get_feature_parents(self, feature, parents=None):
+        '''
+        Climbs up any parent(s) to get to the top-level of a given feature. Will return
+        the input feature if it is already at the top-level.
+        '''
+        if parents is None:
+            parents = []
+        
+        if len(feature.parents) == 0:
+            parents.append(feature)
+        else:
+            for parentID in feature.parents:
+                return self.get_feature_parents(self[parentID])
+        
+        return parents
+    
+    def write(self, outputFileName, typesToWrite=None):
+        '''
+        Writes this GFF3 object to file. For typesToWrite, you should specify the
+        highest level feature type for each feature you are interested in, if you want
+        to avoid output duplication. For example, to output all mRNA features, you probably
+        want to specify the 'gene' parent-level feature.
+        
+        Parameters:
+            outputFileName -- a string indicating the location to write to; overwriting is
+                              not permitted
+            typesToWrite -- None to indicate that all feature types should be output, OR
+                            a list of strings indicating self.type values to output.
+        '''
+        # Validate arguments
+        if os.path.exists(outputFileName):
+            raise FileExistsError(f"'{outputFileName}' already exists; GFF3Tarium will not .write() to here")
+        
+        # Get the contig order to write
+        contigOrder = sorted(self.contigs)
+        
+        # Get feature IDs in orderable fashion
+        sortOrder = []
+        if typesToWrite is None: # get all parent-level features
+            for feature in self.parents:
+                sortOrder.append((contigOrder.index(feature.contig), feature.start, feature.ID))
+        else:
+            found = set() # prevents us from writing the same parent twice with multi-parent features
+            for ftype in typesToWrite:
+                if not ftype in self.ftypes:
+                    raise ValueError(f"typesToWrite received '{ftype}' which is not part of this GFF3Tarium object")
+                
+                for feature in [ self[fid] for fid in self.ftypes[ftype] ]:
+                    for parentFeature in self.get_feature_parents(feature): # climb up to the parent-level if provided child ftypes
+                        if not parentFeature.ID in found:
+                            sortOrder.append((contigOrder.index(parentFeature.contig), parentFeature.start, parentFeature.ID))
+                            found.add(parentFeature.ID)
+        sortOrder.sort(key = lambda x: (x[0], x[1]))
+        
+        # Write ordered features to file
+        with open(outputFileName, "w") as fileOut:
+            haveWritten = set()
+            for _, _, featureID in sortOrder:
+                output = self[featureID].format(haveWritten)
+                if output: # there may theoretically be an edge case where .format() returns None; this handles it
+                    fileOut.write(output)
     
     def __getitem__(self, key):
         return self.features[key]
@@ -776,4 +895,7 @@ def gff3_to_tsv(args):
     # Convert to pandas dataframe to quickly tabulate
     idMapDF = pd.DataFrame.from_dict(mapping, orient="index")
     idMapDF.to_csv(args.outputFileName, sep="\t", index_label=args.map, header=not args.noHeader)
-    
+
+def gff3_to_gff3(args):
+    gff3 = GFF3Tarium(args.gff3File, deduplicate=True)
+    gff3.write(args.outputFileName)
