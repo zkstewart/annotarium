@@ -37,6 +37,31 @@ def validate_g_stats(args):
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_g_merge(args):
+    '''
+    Validation for arguments used in "gff3 merge" mode.
+    '''
+    # Validate second GFF3 file
+    args.gff3File2 = os.path.abspath(args.gff3File2)
+    if not os.path.isfile(args.gff3File2):
+        raise FileNotFoundError(f"Second GFF3 file (-2 {args.gff3File2}) does not exist!")
+    
+    # Validate numeric arguments
+    if not 0 <= args.isoformPercent <= 1:
+        raise ValueError("--isoformPercent must be in the range of 0.0 to 1.0 inclusive")
+    if not 0 <= args.duplicatePercent <= 1:
+        raise ValueError("--duplicatePercent must be in the range of 0.0 to 1.0 inclusive")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    
+    # Validate optional details file
+    if args.outputDetailsName != None:
+        if os.path.exists(args.outputDetailsName):
+            raise FileExistsError(f"Details output file (--outputDetails {args.outputDetailsName}) already exists!")
+
 def validate_g_to(args):
     '''
     Validation for arguments common to all "gff3 to" mode commands.

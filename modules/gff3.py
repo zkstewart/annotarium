@@ -7,6 +7,7 @@ from collections import Counter
 
 from .parsing import read_gz_file, write_conditionally
 from .fasta import FASTATarium, Sequence
+from .coordinates import Coordinates
 
 class GFF3Feature:
     IMMUTABLE = ["ID", "ftype"] # these attributes should never change once set
@@ -29,10 +30,7 @@ class GFF3Feature:
         
         self._children = []
         self.children = children
-        self.parents = parents if isinstance(parents, set) \
-                       else set(parents) if isinstance(parents, list) \
-                       else set([parents]) if isinstance(parents, str) \
-                       else set()
+        self.parents = parents
         self.isInferred = isInferred # flag for checking if this feature was parsed or inferred
         self.isGFF3Feature = True # flag for easier type checking
     
@@ -200,6 +198,17 @@ class GFF3Feature:
         else:
             self.add_child(value) # type is not validated, but we assume it's a GFF3Feature object
     
+    @property
+    def parents(self):
+        return self._parents
+    
+    @parents.setter
+    def parents(self, value):
+        self._parents = value if isinstance(value, set) \
+                        else set(value) if isinstance(value, list) \
+                        else set([value]) if isinstance(value, str) \
+                        else set()
+    
     def add_child(self, childFeature):
         '''
         Adds a child feature to this feature's children list.
@@ -336,15 +345,18 @@ class GFF3Feature:
     
     def __repr__(self):
         reprPairs = []
-        attrsToShow = ["ID", "ftype", "contig", "coords", "strand", "parents"]
+        attrsToShow = ["ID", "ftype", "contig", "start", "end", "strand", "parents"]
         
         for attr in attrsToShow:
-            if attr == "coords":
-                reprPairs.append("coords=[{0}, {1}]".format(self.start, self.end))
-            elif attr == "strand":
-                reprPairs.append("strand={0}".format(self.strand if self.strand != None else "."))
-            else:
-                reprPairs.append("{0}={1}".format(attr, self.__dict__[attr]))
+            # if attr == "coords":
+            #     reprPairs.append("coords=[{0}, {1}]".format(self.start, self.end))
+            # elif attr == "strand":
+            #     reprPairs.append("strand={0}".format(self.strand if self.strand != None else "."))
+            # elif attr == "parents":
+            #     reprPairs.append("parents={0}".format(self.parents))
+            # else:
+            #     reprPairs.append("{0}={1}".format(attr, self.__dict__[attr]))
+            reprPairs.append("{0}={1}".format(attr, getattr(self, attr)))
         
         return "<{0};{1}>".format(";".join(reprPairs),
                                   f"children=[{', '.join([child.ID for child in self.children])}]")
@@ -451,11 +463,22 @@ class GFF3Tarium:
                 longest = [feature, length]
         return longest[0]
     
-    def _get_unique_feature_id(self, inputID):
+    def _format_new_feature_id(self, ftype):
+        '''
+        Parameters:
+            ftype -- a string of a feature type that exists in self.ftypes
+        Returns:
+            newFeatureID -- a (most likely to be) unique feature ID, although
+                            this is not guaranteed for weird GFF3s that are
+                            trying to break things as edge cases
+        '''
+        return f"{ftype}.{len(self.ftypes[ftype]) + 1}"
+    
+    def _get_unique_feature_id(self, inputID, separator="."):
         ongoingCount = 1
         featureID = inputID
         while featureID in self.features:
-            featureID = f"{inputID}.{ongoingCount}"
+            featureID = f"{inputID}{separator}{ongoingCount}"
             if not featureID in self.features:
                 break
             ongoingCount += 1
@@ -504,7 +527,7 @@ class GFF3Tarium:
                 
                 # Get the ID attribute
                 if not "ID" in attributes:
-                    featureID = f"{ftype}.{len(self.ftypes[ftype]) + 1}"
+                    featureID = self._format_new_feature_id(ftype)
                 else:
                     featureID = attributes["ID"]
                 
@@ -555,7 +578,7 @@ class GFF3Tarium:
                     # Handle truly duplicated features
                     else:
                         if deduplicate:
-                            newFeatureID = f"{ftype}.{len(self.ftypes[ftype]) + 1}"
+                            newFeatureID = self._format_new_feature_id(ftype)
                             feature.ID = newFeatureID # although ID should be "immutable" it is not added into this graph yet so this is acceptable
                             self.add(feature)
                         else:
@@ -773,6 +796,142 @@ class GFF3Tarium:
                 if output: # there may theoretically be an edge case where .format() returns None; this handles it
                     fileOut.write(output)
     
+    def reset_id(self, feature, newIDPrefix, merging=False):
+        '''
+        Takes a feature, which may be part of this object or not, and sets its .ID attributes to avoid
+        conflict with any features in this object.
+        
+        Parameters:
+            feature -- a GFF3Feature object which may or may not be part of this GFF3Tarium object.
+            newIDPrefix -- a string to set as the prefix for setting new .ID values for the input features
+                           with cascading down to children.
+            merging -- (OPTIONAL) a boolean indicating whether this feature is being merged from another
+                       GFF3Tarium object into this one. This flag will change how we set parent values.
+        '''
+        newID = self._get_unique_feature_id(newIDPrefix, separator="_")
+        feature.ID = newID
+        for i, child in enumerate(feature.children):
+            if merging:
+                child.parents = set([newID]) # set new parents value
+            else:
+                child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # wipe previous parent ID, add new one
+            self.reset_id(child, f"{newID}.{child.ftype}{i+1}")
+    
+    def merge_feature(self, feature):
+        '''
+        Merges a feature from another GFF3Tarium object into this one. Functionally, this lets us apply
+        slightly different logic to what it seen in .add() to accommodate this scenario better. Specifically,
+        we expect the merged feature to be parent-level, so we want to add its children into the graph
+        rather than inferring previously-unseen parents as might occur in an unsorted GFF3.
+        '''
+        if feature.ID in self.features:
+            raise KeyError(f"'{feature.ID}' cannot merge into this GFF3Tarium object as its ID is a duplicate")
+        
+        # Store the new feature within the graph
+        self.ftypes.setdefault(feature.ftype, [])
+        self.ftypes[feature.ftype].append(feature.ID)
+        self.features[feature.ID] = feature
+        
+        # Update graph features with parent-child relationships
+        for childFeature in feature.children:
+            childFeature.parents = feature.ID # this is necessary despite reset_id setting the parents value; unsure why
+            self.merge_feature(childFeature)
+    
+    def merge_gff3(self, otherGff3, isoPct=0.3, dupePct=0.6):
+        '''
+        Merges another GFF3Tarium object into this one. Both GFF3s should have NCLS indexing applied
+        in a manner which makes sense for finding overlaps.
+        
+        Percentage cutoffs dictate how merging occurs.
+        - Features which overlap < the isoform percentage will be treated as new features. 
+        - Features which overlap >= the isoform percentage cutoff but < the duplicate percentage will
+        be handled as alternative isoforms.
+        - Features which overlap >= the duplicate percentage will be excluded.
+        
+        Parameters:
+            otherGff3 -- another GFF3Tarium instance
+            isoPct -- (OPTIONAL) a float from 0->1 inclusive indicating the lower cutoff for a feature
+                      to be considered a potential isoform variant
+            dupePct -- (OPTIONAL) a float from 0->1 inclusive indicating the lower cutoff for a feature
+                       to be deemed duplicated and omitted from merging
+        Returns:
+            isoforms -- a dictionary where keys are parent IDs from this GFF3 object, and values
+                        are lists of feature IDs that were merged as isoforms into this GFF3
+            additions -- a list of sequence IDs that were merged as new features into this GFF3
+        '''
+        if isoPct < 0 or isoPct > 1:
+            raise ValueError(f"isoPct={isoPct} is not a valid value for merge_gff3()")
+        if dupePct < 0 or dupePct > 1:
+            raise ValueError(f"dupePct={dupePct} is not a valid value for merge_gff3()")
+        
+        # Establish data storage for knowing what changes have been made
+        isoforms = {}
+        additions = []
+        
+        for parent2Feature in otherGff3.parents:
+            p2Coordinates = Coordinates([ (e.start, e.end) for f in parent2Feature.find_with_children("exon") for e in f.exon ])
+            
+            # Skip empty features
+            if len(p2Coordinates) == 0:
+                continue
+            
+            # Store a new feature if there are no overlaps
+            parent1Features = self.ncls_finder(parent2Feature.start, parent2Feature.end, "contig", parent2Feature.contig)
+            if len(parent1Features) == 0:
+                additions.append(parent2Feature.ID)
+                self.reset_id(parent2Feature, parent2Feature.ID, merging=True)
+                self.merge_feature(parent2Feature)
+                continue
+            
+            # Handle overlapping features
+            overlapResults = {}
+            for p1Feature in parent1Features:
+                p1Coordinates = Coordinates([ (e.start, e.end) for f in p1Feature.find_with_children("exon") for e in f.exon ])
+                
+                # Calculate overlap percentage for these child features
+                firstPct, secondPct = p1Coordinates.overlap_percent(p2Coordinates)                
+                overlapPct = max([firstPct, secondPct])
+                
+                # Categorise what we might do according to duplication cutoffs
+                if overlapPct > dupePct:
+                    overlapResults[p1Feature.ID] = "duplicate"
+                    continue
+                elif overlapPct >= isoPct: # isoform sweetspot
+                    overlapResults[p1Feature.ID] = "isoform"
+                    pass
+                else:
+                    overlapResults[p1Feature.ID] = "new"
+            
+            # Skip undesired features
+            if any([ v == "duplicate" for v in overlapResults.values() ]): # do not merge a feature with any overlaps
+                continue
+            if sum([ v == "isoform" for v in overlapResults.values() ]) > 1: # do not merge competing isoforms
+                continue
+            
+            # Merge isoforms
+            if any([ v == "isoform" for v in overlapResults.values() ]):
+                p1FeatureID = [ k for k,v in overlapResults.items() if v == "isoform" ][0] # there will only be 1 match
+                p2Features = parent2Feature.find_with_children("exon")
+                for p2Feature in p2Features:
+                    isoforms.setdefault(p1FeatureID, [])
+                    isoforms[p1FeatureID].append(p2Feature.ID) # logging
+                    
+                    # Integrate this new feature into this GFF3Tarium object
+                    p2Feature.parents = p1FeatureID
+                    self.reset_id(p2Feature, p2Feature.ID, merging=True)
+                    self.merge_feature(p2Feature)
+                    
+                    # Add this new feature as a child of the parent
+                    p1Feature = self[p1FeatureID]
+                    p1Feature.add_child(p2Feature)
+            
+            # Add new features
+            else:
+                additions.append(parent2Feature.ID) # logging
+                self.reset_id(parent2Feature, parent2Feature.ID, merging=True)
+                self.merge_feature(parent2Feature)
+        return isoforms, additions
+    
     def __getitem__(self, key):
         return self.features[key]
     
@@ -807,6 +966,44 @@ class GFF3Tarium:
 def gff3_stats(args):
     raise NotImplementedError("gff3 stats mode not yet implemented")
     return None
+
+def gff3_merge(args):
+    # Parse GFF3 with NCLS indexing
+    gff3_1 = GFF3Tarium(args.gff3File)
+    gff3_1.create_ncls_index(typeToIndex=list(gff3_1.parentFtypes))
+    
+    gff3_2 = GFF3Tarium(args.gff3File2)
+    gff3_2.create_ncls_index(typeToIndex=list(gff3_2.parentFtypes))
+    
+    # Merge and write output GFF3
+    isoforms, additions = gff3_1.merge_gff3(gff3_2, isoPct=args.isoformPercent, dupePct=args.duplicatePercent)
+    gff3_1.write(args.outputFileName)
+    
+    # Print out basic statistics
+    print((f"# '{args.gff3File2}' with {sum( 1 for p in gff3_2.parents )} parent-level " + 
+           f"features was merged into '{args.gff3File}' which has {sum( 1 for p in gff3_1.parents )} " +
+           "parent-level features"))
+    print(f"# {len(additions)} new parent features were added, and {len(isoforms)} isoforms were added")
+    
+    # Optionally emit merge details if requested
+    if args.outputDetailsName != None:
+        with open(args.outputDetailsName, "w") as fileOut:
+            fileOut.write(f"# {len(additions)} new features added")
+            if len(additions) > 0:
+                fileOut.write(", including:\n")
+                for featureID in additions:
+                    fileOut.write(f"{featureID}\n")
+            else:
+                fileOut.write("\n")
+            
+            fileOut.write(f"# {len(isoforms)} new isoforms added as children")
+            if len(isoforms) > 0:
+                fileOut.write(", including:\n")
+                for geneID, newFeatureIDs in isoforms.items():
+                    for newFeatureID in newFeatureIDs:
+                        fileOut.write(f"{geneID} <- {newFeatureID}\n")
+            else:
+                fileOut.write("\n")
 
 def gff3_to_fasta(args):
     fasta = FASTATarium(args.fastaFile)

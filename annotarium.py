@@ -11,9 +11,9 @@ import os, argparse, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, \
     validate_g, validate_g_stats, \
-    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3
+    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, validate_g_merge
 from modules.fasta import fasta_stats
-from modules.gff3 import gff3_stats, gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+from modules.gff3 import gff3_stats, gff3_merge, gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from _version import __version__
 
 def main():
@@ -80,6 +80,37 @@ def main():
     gstatsparser.add_argument("-o", dest="outputFileName",
                               required=True,
                               help="Location to write statistics output")
+    
+    # GFF3 > merge mode
+    gmergeparser = subGFF3Parsers.add_parser("merge",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Merge GFF3 files")
+    gmergeparser.add_argument("-i", dest="gff3File",
+                              required=True,
+                              help="Location of first GFF3 file")
+    gmergeparser.add_argument("-2", dest="gff3File2",
+                              required=True,
+                              help="Location of second GFF3 file to merge into the first file")
+    gmergeparser.add_argument("-o", dest="outputFileName",
+                              required=True,
+                              help="Location to write merged GFF3 output")
+    gmergeparser.add_argument("--outputDetails", dest="outputDetailsName",
+                              required=False,
+                              help="Optional location to write merging details",
+                              default=None)
+    gmergeparser.add_argument("--isoformPercent", dest="isoformPercent",
+                              required=False,
+                              type=float,
+                              help="""Specify the percentage overlap of two models before they are clustered
+                              as isoforms; default == 0.3, equivalent to 30 percent.""",
+                              default=0.3)
+    gmergeparser.add_argument("--duplicatePercent", dest="duplicatePercent",
+                              required=False,
+                              type=float,
+                              help="""Specify the percentage overlap of two models before they are considered
+                              as duplicates and hence rejected or replaced; default == 0.6; equivalent to 60 percent.""",
+                              default=0.6)
     
     # GFF3 > to subparser
     gff3toparser = subGFF3Parsers.add_parser("to",
@@ -214,7 +245,11 @@ def gmain(args):
         print("## GFF3 statistics ##")
         validate_g_stats(args)
         gff3_stats(args)
-    elif args.gff3Mode == "to":
+    if args.gff3Mode == "merge":
+        print("## GFF3 merge ##")
+        validate_g_merge(args)
+        gff3_merge(args)
+    if args.gff3Mode == "to":
         validate_g_to(args)
         if args.gff3ToMode == "fasta":
             print("## GFF3 to FASTA conversion ##")
