@@ -10,10 +10,11 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, \
-    validate_g, validate_g_stats, \
-    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, validate_g_merge
+    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, \
+    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3
 from modules.fasta import fasta_stats
-from modules.gff3 import gff3_stats, gff3_merge, gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, \
+    gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from _version import __version__
 
 def main():
@@ -111,6 +112,39 @@ def main():
                               help="""Specify the percentage overlap of two models before they are considered
                               as duplicates and hence rejected or replaced; default == 0.6; equivalent to 60 percent.""",
                               default=0.6)
+    
+    # GFF3 > filter mode
+    gfilterparser = subGFF3Parsers.add_parser("filter",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="Filter GFF3 file")
+    gfilterparser.add_argument("-i", dest="gff3File",
+                               required=True,
+                               help="Location of GFF3 file")
+    gfilterparser.add_argument("-r", dest="retrieveOrRemove",
+                               required=True,
+                               choices=["retrieve", "remove"],
+                               help="Specify whether selected regions are retrieved or removed")
+    gfilterparser.add_argument("-o", dest="outputFileName",
+                               required=True,
+                               help="Location to write filtered GFF3 output")
+    gfilterparser.add_argument("--regions", dest="regions",
+                               required=False,
+                               nargs="+",
+                               help="""Optionally, specify one or more regions to select with
+                               contig:start-end format (e.g., 'chr1:1000000-2000000') or just
+                               with the contig alone
+                               """,
+                               default=[])
+    gfilterparser.add_argument("--list", dest="listFile",
+                               required=False,
+                               help="Optional location of a text file to parse for listed values",
+                               default=None)
+    gfilterparser.add_argument("--values", dest="values",
+                               required=False,
+                               nargs="+",
+                               help="Optionally, specify one or more values to select",
+                               default=[])
     
     # GFF3 > to subparser
     gff3toparser = subGFF3Parsers.add_parser("to",
@@ -249,6 +283,10 @@ def gmain(args):
         print("## GFF3 merge ##")
         validate_g_merge(args)
         gff3_merge(args)
+    if args.gff3Mode == "filter":
+        print("## GFF3 filtering ##")
+        validate_g_filter(args)
+        gff3_filter(args)
     if args.gff3Mode == "to":
         validate_g_to(args)
         if args.gff3ToMode == "fasta":

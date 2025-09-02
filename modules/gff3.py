@@ -243,6 +243,19 @@ class GFF3Feature:
                     return child.find_with_children(attribute, foundChildren)
         return foundChildren
     
+    def find_all_children(self, foundChildren=None):
+        '''
+        Returns _all_ children contained under this feature.
+        '''
+        if foundChildren is None:
+            foundChildren = []
+        
+        if len(self.children) != 0:
+            for child in self.children:
+                foundChildren.append(child)
+                child.find_all_children(foundChildren)
+        return foundChildren
+    
     def length(self, attribute):
         '''
         Sums the length of all .attribute children contained under this feature.
@@ -402,6 +415,7 @@ class GFF3Tarium:
         self.ncls = None
         self._nclsType = None
         self._nclsIndex = None
+        self._nclsMax = None
         
         self.parse_gff3(self.fileLocation, deduplicate)
         self.isGFF3Tarium = True # flag for easier type checking
@@ -634,6 +648,7 @@ class GFF3Tarium:
         starts, ends, ids = [], [], []
         
         # Add features of the specified type to our NCLS structure
+        nclsMax = 0
         ongoingCount = 0
         for indexType in typeToIndex:
             for featureID in self.ftypes[indexType]:
@@ -643,6 +658,7 @@ class GFF3Tarium:
                 ids.append(ongoingCount)
                 nclsIndex[ongoingCount] = feature
                 ongoingCount += 1
+                nclsMax = max(nclsMax, feature.end + 1)
         
         # Build the NCLS object
         starts = pd.Series(starts)
@@ -654,6 +670,7 @@ class GFF3Tarium:
         self.ncls = ncls
         self._nclsType = typeToIndex
         self._nclsIndex = nclsIndex
+        self._nclsMax = nclsMax # used to know the upper bound for querying all ranges indexed
     
     def ncls_finder(self, start, stop, field, value):
         '''
@@ -750,7 +767,7 @@ class GFF3Tarium:
         
         return parents
     
-    def write(self, outputFileName, typesToWrite=None):
+    def write(self, outputFileName, typesToWrite=None, idsToWrite=None):
         '''
         Writes this GFF3 object to file. For typesToWrite, you should specify the
         highest level feature type for each feature you are interested in, if you want
@@ -762,21 +779,32 @@ class GFF3Tarium:
                               not permitted
             typesToWrite -- None to indicate that all feature types should be output, OR
                             a list of strings indicating self.type values to output.
+            idsToWrite -- None to indicate that all features should be output, OR
+                          a list of strings indicating feature IDs to output.
         '''
         # Validate arguments
         if os.path.exists(outputFileName):
             raise FileExistsError(f"'{outputFileName}' already exists; GFF3Tarium will not .write() to here")
+        if typesToWrite != None and idsToWrite != None:
+            raise ValueError("GFF3Tarium.write() can't handle typesToWrite and idsToWrite both being set")
         
         # Get the contig order to write
         contigOrder = sorted(self.contigs)
         
         # Get feature IDs in orderable fashion
+        found = set() # prevents us from writing the same parent twice with multi-parent features
         sortOrder = []
-        if typesToWrite is None: # get all parent-level features
+        if typesToWrite is None and idsToWrite is None: # get all parent-level features
             for feature in self.parents:
                 sortOrder.append((contigOrder.index(feature.contig), feature.start, feature.ID))
-        else:
-            found = set() # prevents us from writing the same parent twice with multi-parent features
+        elif idsToWrite != None: # just use the given IDs
+            for featureID in idsToWrite:
+                parentFeatures = self.get_feature_parents(self[featureID]) # climb up to the parent-level if provided a child ID
+                for parentFeature in parentFeatures:
+                    if not parentFeature.ID in found:
+                        sortOrder.append((contigOrder.index(parentFeature.contig), parentFeature.start, parentFeature.ID))
+                        found.add(parentFeature.ID)
+        else: # limit ourselves to the feature types provided
             for ftype in typesToWrite:
                 if not ftype in self.ftypes:
                     raise ValueError(f"typesToWrite received '{ftype}' which is not part of this GFF3Tarium object")
@@ -1004,6 +1032,78 @@ def gff3_merge(args):
                         fileOut.write(f"{geneID} <- {newFeatureID}\n")
             else:
                 fileOut.write("\n")
+
+def gff3_filter(args):
+    # Parse list file (if applicable)
+    selectionValues = []
+    if args.listFile != None:
+        with open(args.listFile, "r") as fileIn:
+            for line in fileIn:
+                selectionValues.append(line.strip())
+    
+    # Mix in any values specified on command-line
+    selectionValues.extend(args.values)
+    
+    # Remove duplicates and set None if no selection is to occur
+    selectionValues = set(selectionValues)
+    if len(selectionValues) == 0:
+        selectionValues = None
+    
+    # Parse GFF3 with NCLS indexing
+    gff3 = GFF3Tarium(args.gff3File)
+    gff3.create_ncls_index(typeToIndex=list(gff3.parentFtypes))
+    
+    # Set upper bounds for any regions with end==None
+    if args.regions != None:
+        for region in args.regions:
+            if region["end"] == None:
+                region["end"] = gff3._nclsMax
+    
+    # Filter based on selection criteria
+    passedIDs = []
+    for parentFeature in gff3.parents:
+        # Handle region selection
+        if args.regions != None: # ignore region selection if == None
+            isSelected = any([
+                Coordinates.isOverlapping(parentFeature.start, parentFeature.end,
+                                          region["start"], region["end"])
+                for region in args.regions
+                if parentFeature.contig == region["contig"]
+            ])
+            
+            if args.retrieveOrRemove == "retrieve" and isSelected:
+                passedIDs.append(parentFeature.ID)
+                continue # passes selection criteria
+            elif isSelected:
+                continue # filter and remove
+        
+        # Handle value selection
+        if selectionValues != None:
+            isSelected = False
+            
+            for feature in [parentFeature] + parentFeature.find_all_children():
+                for attribute in GFF3Feature.HEADER_FORMAT:
+                    if attribute == "attributes":
+                        for value in feature.attributes.values():
+                            if value in selectionValues:
+                                isSelected = True
+                    else:
+                        if getattr(feature, attribute) in selectionValues:
+                            isSelected = True
+                            break
+            
+            if args.retrieveOrRemove == "retrieve" and isSelected:
+                passedIDs.append(parentFeature.ID)
+                pass # passes selection criteria
+            elif isSelected:
+                continue # filter and remove
+    
+    # Exit if no features are selected
+    if len(passedIDs) == 0:
+        raise ValueError("No features would be written to file with your filtering criteria")
+    
+    # Write to output if we pass the previous selection checks
+    gff3.write(args.outputFileName, idsToWrite=passedIDs)    
 
 def gff3_to_fasta(args):
     fasta = FASTATarium(args.fastaFile)
