@@ -15,6 +15,22 @@ git clone https://github.com/zkstewart/annotarium.git
 python /location/of/annotarium/annotarium.py fasta stats \
     -i $FASTA -o fasta_stats.tsv
 
+# Merge a second GFF3 file into the first
+python /location/of/annotarium/annotarium.py gff3 merge \
+    -i $GFF3 -2 $OTHERGFF3 -o merged.gff3
+
+# Filter a GFF3 by values and/or regions
+python /location/of/annotarium/annotarium.py gff3 filter \
+    -i $GFF3 -r retrieve -o filtered.gff3  \
+    --regions chr1:100000-250000 chr2 \
+    --list ids.txt --values seq1 seq2
+
+# Annotate a GFF3 with attributes
+python /location/of/annotarium/annotarium.py gff3 annotate \
+    -i $GFF3 -t annotations.tsv \
+    -c "gene_names:Description:[" "gene_ontologies:GOs:" \
+    -o annotated.gff3
+
 # Convert GFF3 annotations into FASTA sequences
 python /location/of/annotarium/annotarium.py gff3 to fasta \
     -i $GFF3 -f $FASTA -o sequences_prefix
@@ -27,6 +43,9 @@ python /location/of/annotarium/annotarium.py gff3 to tsv \
 # Reformat a GFF3 into proper GFF3 standard, with sorting
 python /location/of/annotarium/annotarium.py gff3 to gff3 \
     -i $GFF3 -o updated_annotation.gff3 
+
+
+
 ```
 
 # Installation
