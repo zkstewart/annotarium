@@ -43,9 +43,6 @@ python /location/of/annotarium/annotarium.py gff3 to tsv \
 # Reformat a GFF3 into proper GFF3 standard, with sorting
 python /location/of/annotarium/annotarium.py gff3 to gff3 \
     -i $GFF3 -o updated_annotation.gff3 
-
-
-
 ```
 
 # Installation
