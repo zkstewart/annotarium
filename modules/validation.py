@@ -41,6 +41,21 @@ def parse_regions(regions):
     
     return parsedRegions
 
+def parse_annotate(columnAttributeDelimiter):
+    '''
+    Parameters:
+        columnAttributeDelimiter -- a list of strings in format 'column:attribute:delimiter'
+    Returns:
+        annotateValues -- a list of lists like [column, attribute, delimiter] where delimiter
+                          can be None
+    '''
+    annotateValues = []
+    for value in columnAttributeDelimiter:
+        column, attributeDelimiter = value.split(":", maxsplit=1)
+        attribute, delimiter = attributeDelimiter.split(":", maxsplit=1)
+        annotateValues.append([column, attribute, delimiter if delimiter != "" else None])
+    return annotateValues
+
 def validate_f(args):
     '''
     Validation for arguments common to all "fasta" mode commands.
@@ -123,6 +138,22 @@ def validate_g_filter(args):
     if args.listFile != None:
         if not os.path.isfile(args.listFile):
             raise FileExistsError(f"Values list file (--list {args.listFile}) is not a file")
+
+def validate_g_annotate(args):
+    '''
+    Validation for arguments used in "gff3 annotate" mode.
+    '''
+    # Validate table file name
+    if not os.path.isfile(args.tableFile):
+        raise FileExistsError(f"Table file (-t {args.tableFile}) is not a file")
+    
+    # Parse columnAttributeDelimiter
+    args.columnAttributeDelimiter = parse_annotate(args.columnAttributeDelimiter)
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_g_to(args):
     '''

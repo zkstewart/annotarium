@@ -5,7 +5,7 @@ import pandas as pd
 from ncls import NCLS
 from collections import Counter
 
-from .parsing import read_gz_file, write_conditionally
+from .parsing import read_gz_file, write_conditionally, parse_annotation_table
 from .fasta import FASTATarium, Sequence
 from .coordinates import Coordinates
 
@@ -171,7 +171,9 @@ class GFF3Feature:
         
         # Add other attributes
         if self._attributes != None:
-            attrDict.update(self._attributes)
+            for key, value in self._attributes.items():
+                if not key in GFF3Feature.CONTROLLED_ATTRIBUTES:
+                    attrDict[key] = value
         
         return attrDict
     
@@ -1103,7 +1105,36 @@ def gff3_filter(args):
         raise ValueError("No features would be written to file with your filtering criteria")
     
     # Write to output if we pass the previous selection checks
-    gff3.write(args.outputFileName, idsToWrite=passedIDs)    
+    gff3.write(args.outputFileName, idsToWrite=passedIDs)
+
+def gff3_annotate(args):
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Parse and annotate all relevant attributes
+    for dataDict in parse_annotation_table(args.tableFile):
+        # Format the attributes to annotate within our GFF3
+        attributeAnnotations = {}
+        for column, attribute, delimiter in args.columnAttributeDelimiter:
+            try:
+                value = dataDict[column]
+            except KeyError:
+                raise KeyError(f"'{column}' as part of {column, attribute, delimiter} trio is not a table column")
+            
+            if delimiter != None:
+                value = value.split(delimiter)[0].strip()
+            attributeAnnotations[attribute] = value
+        
+        # Annotate these attributes into the GFF3
+        try:
+            feature = gff3[dataDict["leftcolumn"]]
+        except KeyError:
+            tableID = dataDict['leftcolumn']
+            raise KeyError(f"'{tableID}' from annotation table was not found in your GFF3")
+        for key, value in attributeAnnotations.items():
+            feature._attributes[key] = value
+    
+    # Write to file
+    gff3.write(args.outputFileName)
 
 def gff3_to_fasta(args):
     fasta = FASTATarium(args.fastaFile)

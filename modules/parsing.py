@@ -47,3 +47,25 @@ def write_conditionally(fileName):
         else:
             with open(fileName, "w") as f:
                 yield f
+
+def parse_annotation_table(fileName, delimiter="\t"):
+    '''
+    Returns:
+        dataDict -- a dictionary where keys are column headers and
+                    values are the text contents of this row's value.
+                    An additional "leftcolumn" key is added with the
+                    first column's value which should correspond to
+                    the ID.
+    '''
+    header = None
+    with open(fileName, "r") as fileIn:
+        for line in fileIn:
+            sl = line.strip().split(delimiter)
+            if header == None:
+                header = sl
+                headerIndex = { h:i for i,h in enumerate(header) }
+                continue
+            
+            dataDict = {"leftcolumn": sl[0]}
+            dataDict.update({ h:sl[i] for h, i in headerIndex.items() })
+            yield dataDict
