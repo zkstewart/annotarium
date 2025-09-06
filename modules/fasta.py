@@ -112,7 +112,7 @@ class Sequence:
         self._description = value
         
         # Format and set self.id
-        self._id = value.split(" ")[0]
+        self._id = value.split()[0]
     
     @property
     def id(self):

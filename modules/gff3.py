@@ -1,6 +1,6 @@
 #! python3
 
-import os, math
+import os, math, re
 import pandas as pd
 from ncls import NCLS
 from collections import Counter
@@ -390,6 +390,7 @@ class GFF3Tarium:
         "Product": "gene" # Product is a special case, but we treat it as a gene parent
         # "gene": None  # Gene is the top-level feature, no parent should be inferred
     }
+    SEMICOLON_REGEX = re.compile(r";{2,}")
     
     @staticmethod
     def format_attributes(attributes):
@@ -398,8 +399,15 @@ class GFF3Tarium:
         semi-colons exist, or when e.g., chemical names are embedded which may contain semi colons, not as a 
         delimiter, but as part of the value.
         '''
+        # Run an initial cleaning of the string
+        attributes = attributes.strip("\r\n\t; ")
+        multiSemiColons = sorted(set(GFF3Tarium.SEMICOLON_REGEX.findall(attributes)), key=len, reverse=True)
+        for multipleSemiColonString in multiSemiColons:
+            attributes = attributes.replace(multipleSemiColonString, ";")
+        
+        # Parse string into pairs of key:value attributes
         splitAttributes = []
-        for a in attributes.strip("\r\n\t; ").split("="):
+        for a in attributes.split("="):
             if ";" in a:
                 splitAttributes += a.rsplit(";", maxsplit=1)
             else:
