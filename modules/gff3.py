@@ -1,13 +1,14 @@
 #! python3
 
-import os, math, re
+import os, math, re, sys
 import pandas as pd
 from ncls import NCLS
 from collections import Counter
 
-from .parsing import read_gz_file, write_conditionally, parse_annotation_table
-from .fasta import FASTATarium, Sequence
-from .coordinates import Coordinates
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import read_gz_file, write_conditionally, parse_annotation_table
+from fasta import FASTATarium, Sequence
+from coordinates import Coordinates
 
 class GFF3Feature:
     IMMUTABLE = ["ID", "ftype"] # these attributes should never change once set

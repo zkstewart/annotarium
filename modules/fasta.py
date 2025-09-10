@@ -1,13 +1,14 @@
 #! python3
 
-import os, locale
+import os, locale, sys
 import pandas as pd
 from copy import deepcopy
 from itertools import product
 from Bio.Data import CodonTable, IUPACData
 
-from .parsing import read_gz_file
-from .stats import N50, count_lowercase, count_char
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import read_gz_file
+from stats import N50, count_lowercase, count_char
 
 locale.setlocale(locale.LC_ALL, "")
 
