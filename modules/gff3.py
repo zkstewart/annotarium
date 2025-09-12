@@ -867,6 +867,7 @@ class GFF3Tarium:
             raise KeyError(f"'{feature.ID}' cannot merge into this GFF3Tarium object as its ID is a duplicate")
         
         # Store the new feature within the graph
+        self.parentFtypes.add(feature.ftype)
         self.ftypes.setdefault(feature.ftype, [])
         self.ftypes[feature.ftype].append(feature.ID)
         self.features[feature.ID] = feature
