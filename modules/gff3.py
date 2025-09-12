@@ -868,6 +868,8 @@ class GFF3Tarium:
         
         # Store the new feature within the graph
         self.parentFtypes.add(feature.ftype)
+        self.contigs.add(feature.contig)
+        
         self.ftypes.setdefault(feature.ftype, [])
         self.ftypes[feature.ftype].append(feature.ID)
         self.features[feature.ID] = feature
