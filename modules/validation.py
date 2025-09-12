@@ -215,3 +215,17 @@ def validate_g_to_gff3(args):
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_rnammer(args):
+    '''
+    Validation for arguments used in "rnammer" mode.
+    '''
+    # Validate RNAmmer GFF2 file
+    args.rnammerGff2 = os.path.abspath(args.rnammerGff2)
+    if not os.path.isfile(args.rnammerGff2):
+        raise FileNotFoundError(f"RNAmmer GFF2 file (-i {args.rnammerGff2}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")

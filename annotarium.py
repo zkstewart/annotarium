@@ -11,10 +11,12 @@ import os, argparse, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
-    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3
+    validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
+    validate_rnammer
 from modules.fasta import fasta_stats
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+from modules.rnammer import rnammer_reformat
 from _version import __version__
 
 def main():
@@ -273,6 +275,19 @@ def main():
                                required=True,
                                help="Location to write GFF3 output")
     
+    # RNAmmer mode
+    rnammerparser = subparsers.add_parser("rnammer",
+                                          parents=[p],
+                                          add_help=False,
+                                          help="Reformat RNAmmer to GFF3")
+    rnammerparser.set_defaults(func=rnammermain)
+    rnammerparser.add_argument("-i", dest="rnammerGff2",
+                               required=True,
+                               help="Location of RNAmmer GFF2 file")
+    rnammerparser.add_argument("-o", dest="outputFileName",
+                               required=True,
+                               help="Location to write GFF3 output")
+    
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
@@ -284,6 +299,10 @@ def main():
         print("## annotarium.py - GFF3 handling ##")
         validate_g(args)
         gmain(args)
+    if args.mode == "rnammer":
+        print("## annotarium.py - RNAmmer handling ##")
+        validate_rnammer(args)
+        rnammermain(args)
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
@@ -331,6 +350,11 @@ def gmain(args):
             gff3_to_gff3(args)
     
     print("GFF3 handling complete!")
+
+def rnammermain(args):
+    rnammer_reformat(args)
+    
+    print("RNAmmer handling complete!")
 
 if __name__ == "__main__":
     main()
