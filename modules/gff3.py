@@ -909,6 +909,7 @@ class GFF3Tarium:
         # Establish data storage for knowing what changes have been made
         isoforms = {}
         additions = []
+        rejections = {}
         
         for parent2Feature in otherGff3.parents:
             p2Coordinates = Coordinates([ (e.start, e.end) for f in parent2Feature.find_with_children("exon") for e in f.exon ])
@@ -937,6 +938,8 @@ class GFF3Tarium:
                 # Categorise what we might do according to duplication cutoffs
                 if overlapPct > dupePct:
                     overlapResults[p1Feature.ID] = "duplicate"
+                    rejections.setdefault(parent2Feature.ID, [])
+                    rejections[parent2Feature.ID].append(p1Feature.ID)
                     continue
                 elif overlapPct >= isoPct: # isoform sweetspot
                     overlapResults[p1Feature.ID] = "isoform"
@@ -972,7 +975,7 @@ class GFF3Tarium:
                 additions.append(parent2Feature.ID) # logging
                 self.reset_id(parent2Feature, parent2Feature.ID, merging=True)
                 self.merge_feature(parent2Feature)
-        return isoforms, additions
+        return isoforms, additions, rejections
     
     def __getitem__(self, key):
         return self.features[key]
@@ -1018,14 +1021,16 @@ def gff3_merge(args):
     gff3_2.create_ncls_index(typeToIndex=list(gff3_2.parentFtypes))
     
     # Merge and write output GFF3
-    isoforms, additions = gff3_1.merge_gff3(gff3_2, isoPct=args.isoformPercent, dupePct=args.duplicatePercent)
+    isoforms, additions, rejections = gff3_1.merge_gff3(gff3_2, isoPct=args.isoformPercent, dupePct=args.duplicatePercent)
     gff3_1.write(args.outputFileName)
     
     # Print out basic statistics
-    print((f"# '{args.gff3File2}' with {sum( 1 for p in gff3_2.parents )} parent-level " + 
-           f"features was merged into '{args.gff3File}' which has {sum( 1 for p in gff3_1.parents )} " +
+    print((f"# File 1: '{args.gff3File2}' with {sum( 1 for p in gff3_2.parents )} parent-level " + 
+           f"features was merged into file 2: '{args.gff3File}' which has {sum( 1 for p in gff3_1.parents )} " +
            "parent-level features"))
-    print(f"# {len(additions)} new parent features were added, and {len(isoforms)} isoforms were added")
+    print(f"# {len(additions)} new parent features were added into file 1")
+    print(f"# {len(isoforms)} isoforms were added into file 2")
+    print(f"# {len(rejections)} file 2 features were rejected due to overlap")
     
     # Optionally emit merge details if requested
     if args.outputDetailsName != None:
@@ -1044,6 +1049,15 @@ def gff3_merge(args):
                 for geneID, newFeatureIDs in isoforms.items():
                     for newFeatureID in newFeatureIDs:
                         fileOut.write(f"{geneID} <- {newFeatureID}\n")
+            else:
+                fileOut.write("\n")
+            
+            fileOut.write(f"# {len(rejections)} features were rejected")
+            if len(rejections) > 0:
+                fileOut.write(", including:\n")
+                for geneID, overlappingIDs in rejections.items():
+                    formattedIDs = ", ".join(overlappingIDs)
+                    fileOut.write(f"{geneID} \ {formattedIDs}\n")
             else:
                 fileOut.write("\n")
 
