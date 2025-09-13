@@ -227,6 +227,7 @@ class GFF3Feature:
     def find_with_children(self, attribute, foundChildren=None):
         '''
         Finds ("catches") all children contained under this feature which have the specified attribute.
+        Can return the original object at the top of the recursion if it has the specified attribute.
         
         Parameters:
             attribute -- a string indicating an attribute that a child feature should have.
@@ -237,6 +238,8 @@ class GFF3Feature:
         '''
         if foundChildren is None:
             foundChildren = []
+            if hasattr(self, attribute):
+                foundChildren.append(self)
         
         if len(self.children) != 0:
             for child in self.children:
@@ -1030,7 +1033,7 @@ def gff3_merge(args):
            "parent-level features"))
     print(f"# {len(additions)} new parent features were added into file 1")
     print(f"# {len(isoforms)} isoforms were added into file 2")
-    print(f"# {len(rejections)} file 2 features were rejected due to overlap")
+    print(f"# {len(rejections)} features from file 2 were rejected due to overlap")
     
     # Optionally emit merge details if requested
     if args.outputDetailsName != None:
