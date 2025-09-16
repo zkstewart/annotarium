@@ -247,3 +247,31 @@ def validate_rnammer(args):
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_irf(args):
+    '''
+    Validation for arguments used in "irf" mode.
+    '''
+    # Validate IRF .dat file
+    args.irfDatFile = os.path.abspath(args.irfDatFile)
+    if not os.path.isfile(args.irfDatFile):
+        raise FileNotFoundError(f"IRF .dat file (-i {args.irfDatFile}) does not exist!")
+    
+    # Validate numeric arguments
+    if args.minimumLength < -1:
+        raise ValueError("--minLen must be a positive integer, or 0 or -1")
+    if args.maximumLength < -1:
+        raise ValueError("--maxLen must be a positive integer, or 0 or -1")
+    if args.minimumGap < -1:
+        raise ValueError("--minGap must be a positive integer, or 0 or -1")
+    if args.maximumGap < -1:
+        raise ValueError("--maxGap must be a positive integer, or 0 or -1")
+    if args.identityCutoff < 0:
+        raise ValueError("--identity must be no less than 0")
+    if args.identityCutoff > 100:
+        raise ValueError("--identity must be no more than 100")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")

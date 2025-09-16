@@ -12,10 +12,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
-    validate_rnammer
+    validate_rnammer, \
+    validate_irf
 from modules.fasta import fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
 from _version import __version__
 
@@ -287,6 +289,44 @@ def main():
                                required=True,
                                help="Location to write GFF3 output")
     
+    # IRF mode
+    irfparser = subparsers.add_parser("irf",
+                                      parents=[p],
+                                      add_help=False,
+                                      help="Reformat IRF to GFF3")
+    irfparser.set_defaults(func=irfmain)
+    irfparser.add_argument("-i", dest="irfDatFile",
+                           required=True,
+                           help="Location of IRF .dat file")
+    irfparser.add_argument("-o", dest="outputFileName",
+                           required=True,
+                           help="Location to write GFF3 output")
+    irfparser.add_argument("--minLen", dest="minimumLength",
+                           required=False,
+                           type=int,
+                           help="Optionally filter IRs < this length; set to 0 or -1 for no filtering",
+                           default=0)
+    irfparser.add_argument("--maxLen", dest="maximumLength",
+                           required=False,
+                           type=int,
+                           help="Optionally filter IRs > this length; set to 0 or -1 for no filtering",
+                           default=0)
+    irfparser.add_argument("--minGap", dest="minimumGap",
+                           required=False,
+                           type=int,
+                           help="Optionally filter IRs < this length; set to 0 or -1 for no filtering",
+                           default=0)
+    irfparser.add_argument("--maxGap", dest="maximumGap",
+                           required=False,
+                           type=int,
+                           help="Optionally filter IRs > this length; set to 0 or -1 for no filtering",
+                           default=0)
+    irfparser.add_argument("--identity", dest="identityCutoff",
+                           required=False,
+                           type=float,
+                           help="""Optionally filter IRs < this percentage identity (0-100); 
+                           set to 0 for no filtering""",
+                           default=0)
     # RNAmmer mode
     rnammerparser = subparsers.add_parser("rnammer",
                                           parents=[p],
@@ -311,6 +351,10 @@ def main():
         print("## annotarium.py - GFF3 handling ##")
         validate_g(args)
         gmain(args)
+    if args.mode == "irf":
+        print("## annotarium.py - IRF results handling ##")
+        validate_irf(args)
+        irfmain(args)
     if args.mode == "rnammer":
         print("## annotarium.py - RNAmmer handling ##")
         validate_rnammer(args)
@@ -366,6 +410,11 @@ def gmain(args):
             gff3_to_gff3(args)
     
     print("GFF3 handling complete!")
+
+def irfmain(args):
+    irf_to_gff3(args)
+    
+    print("IRF handling complete!")
 
 def rnammermain(args):
     rnammer_reformat(args)
