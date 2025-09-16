@@ -9,11 +9,11 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_f, validate_f_stats, \
+from modules.validation import validate_f, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_rnammer
-from modules.fasta import fasta_stats
+from modules.fasta import fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from modules.rnammer import rnammer_reformat
@@ -61,6 +61,18 @@ def main():
     fstatsparser.add_argument("--out", "-o", dest="outputFileName",
                               required=False,
                               help="Optionally, write statistics output to file")
+    
+    # FASTA > explode mode
+    fexplodeparser = subFASTAParsers.add_parser("explode",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Explode FASTA into contigs")
+    fexplodeparser.add_argument("-i", dest="fastaFile",
+                                 required=True,
+                                 help="Location of FASTA file")
+    fexplodeparser.add_argument("-o", dest="outputDirectory",
+                                 required=False,
+                                 help="Directory to write contig files to")
     
     # GFF3 subparser
     gparser = subparsers.add_parser("gff3",
@@ -313,6 +325,10 @@ def fmain(args):
         print("## FASTA statistics ##")
         validate_f_stats(args)
         fasta_stats(args)
+    if args.fastaMode == "explode":
+        print("## FASTA explosion ##")
+        validate_f_explode(args)
+        fasta_explode(args)
     
     print("FASTA handling complete!")
 

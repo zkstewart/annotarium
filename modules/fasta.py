@@ -406,3 +406,9 @@ def fasta_stats(args):
         statsDF.loc["#Median"] = [medianStat, None, None]
         statsDF.loc["#Mean"] = [meanStat, None, None]
         statsDF.to_csv(args.outputFileName, sep="\t")
+
+def fasta_explode(args):
+    fasta = FASTATarium(args.fastaFile)
+    for record in fasta:
+        with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
+            fileOut.write(record.format())
