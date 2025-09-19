@@ -838,10 +838,11 @@ class GFF3Tarium:
                 if output: # there may theoretically be an edge case where .format() returns None; this handles it
                     fileOut.write(output)
     
-    def reset_id(self, feature, newIDPrefix, merging=False):
+    def update_feature(self, feature, newIDPrefix, merging=False):
         '''
-        Takes a feature, which may be part of this object or not, and sets its .ID attributes to avoid
-        conflict with any features in this object.
+        General purpose function capable of updating a feature's ID in-place or merging a new feature
+        into this object. This function will ensure that .ID values are deduplicated if a conflict
+        would occur, and propagates changes through children recursively.
         
         Parameters:
             feature -- a GFF3Feature object which may or may not be part of this GFF3Tarium object.
@@ -850,46 +851,36 @@ class GFF3Tarium:
             merging -- (OPTIONAL) a boolean indicating whether this feature is being merged from another
                        GFF3Tarium object into this one. This flag will change how we set parent values.
         '''
-        # Wipe existing key from .features and .ftypes
-        del self.features[feature.ID]
-        self.ftypes[feature.ftype].remove(feature.ID)
+        # Wipe existing key from .features and .ftypes in case this is an ID update
+        try:
+            del self.features[feature.ID]
+            self.ftypes[feature.ftype].remove(feature.ID)
+        except:
+            pass # this condition occurs during merging of a new feature from another GFF3
         
-        # Set new ID and store in .features and .ftypes
-        newID = self._get_unique_feature_id(newIDPrefix, separator="_")
-        feature.ID = newID
-        self.features[feature.ID] = feature # index the renamed feature
-        self.ftypes[feature.ftype].append(feature.ID) # add the feature ID into the ftypes iterable
-        
-        # Recursively update child .parents values
-        for i, child in enumerate(feature.children):
-            if merging:
-                child.parents = set([newID]) # set new parents value
-            else:
-                child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # wipe previous parent ID, add new one
-            self.reset_id(child, f"{newID}.{child.ftype}{i+1}", merging)
-    
-    def merge_feature(self, feature):
-        '''
-        Merges a feature from another GFF3Tarium object into this one. Functionally, this lets us apply
-        slightly different logic to what it seen in .add() to accommodate this scenario better. Specifically,
-        we expect the merged feature to be parent-level, so we want to add its children into the graph
-        rather than inferring previously-unseen parents as might occur in an unsorted GFF3.
-        '''
-        if feature.ID in self.features:
-            raise KeyError(f"'{feature.ID}' cannot merge into this GFF3Tarium object as its ID is a duplicate")
-        
-        # Store the new feature within the graph
+        # Store extraneous details in case this is a new feature
         self.parentFtypes.add(feature.ftype)
         self.contigs.add(feature.contig)
         
-        self.ftypes.setdefault(feature.ftype, [])
-        self.ftypes[feature.ftype].append(feature.ID)
-        self.features[feature.ID] = feature
+        # Deduplicate ID in case this is necessary
+        newID = self._get_unique_feature_id(newIDPrefix, separator="_")
+        feature.ID = newID
         
-        # Update graph features with parent-child relationships
-        for childFeature in feature.children:
-            childFeature.parents = feature.ID # this is necessary despite reset_id setting the parents value; unsure why
-            self.merge_feature(childFeature)
+        # Store in .features and .ftypes
+        self.features[feature.ID] = feature # index the renamed feature
+        self.ftypes[feature.ftype].append(feature.ID) # add the feature ID into the ftypes iterable
+        
+        # Recursively update children
+        for i, child in enumerate(feature.children):
+            if merging: # i.e., this is a feature coming from another GFF3Tarium object
+                child.parents = set([newID]) # remove previous object's parents
+            else:
+                child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # replace previous ID with potentially updated/deduplicated ID
+            
+            if newIDPrefix == newID:
+                self.update_feature(child, child.ID, merging) # maintain the child's ID if the parent needed no changes
+            else:
+                self.update_feature(child, f"{newID}.{child.ftype}{i+1}", merging) # propagate the new ID system to downstream children
     
     def merge_gff3(self, otherGff3, isoPct=0.3, dupePct=0.6):
         '''
@@ -934,8 +925,7 @@ class GFF3Tarium:
             parent1Features = self.ncls_finder(parent2Feature.start, parent2Feature.end, "contig", parent2Feature.contig)
             if len(parent1Features) == 0:
                 additions.append(parent2Feature.ID)
-                self.reset_id(parent2Feature, parent2Feature.ID, merging=True)
-                self.merge_feature(parent2Feature)
+                self.update_feature(parent2Feature, parent2Feature.ID, merging=True)
                 continue
             
             # Handle overlapping features
@@ -975,8 +965,7 @@ class GFF3Tarium:
                     
                     # Integrate this new feature into this GFF3Tarium object
                     p2Feature.parents = p1FeatureID
-                    self.reset_id(p2Feature, p2Feature.ID, merging=True)
-                    self.merge_feature(p2Feature)
+                    self.update_feature(p2Feature, p2Feature.ID, merging=True)
                     
                     # Add this new feature as a child of the parent
                     p1Feature = self[p1FeatureID]
@@ -985,8 +974,7 @@ class GFF3Tarium:
             # Add new features
             else:
                 additions.append(parent2Feature.ID) # logging
-                self.reset_id(parent2Feature, parent2Feature.ID, merging=True)
-                self.merge_feature(parent2Feature)
+                self.update_feature(parent2Feature, parent2Feature.ID, merging=True)
         return isoforms, additions, rejections
     
     def __getitem__(self, key):
