@@ -1,6 +1,6 @@
 #! python3
 
-import os, math, re, sys
+import os, re, sys
 import pandas as pd
 from ncls import NCLS
 from collections import Counter
@@ -850,14 +850,23 @@ class GFF3Tarium:
             merging -- (OPTIONAL) a boolean indicating whether this feature is being merged from another
                        GFF3Tarium object into this one. This flag will change how we set parent values.
         '''
+        # Wipe existing key from .features and .ftypes
+        del self.features[feature.ID]
+        self.ftypes[feature.ftype].remove(feature.ID)
+        
+        # Set new ID and store in .features and .ftypes
         newID = self._get_unique_feature_id(newIDPrefix, separator="_")
         feature.ID = newID
+        self.features[feature.ID] = feature # index the renamed feature
+        self.ftypes[feature.ftype].append(feature.ID) # add the feature ID into the ftypes iterable
+        
+        # Recursively update child .parents values
         for i, child in enumerate(feature.children):
             if merging:
                 child.parents = set([newID]) # set new parents value
             else:
                 child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # wipe previous parent ID, add new one
-            self.reset_id(child, f"{newID}.{child.ftype}{i+1}")
+            self.reset_id(child, f"{newID}.{child.ftype}{i+1}", merging)
     
     def merge_feature(self, feature):
         '''
