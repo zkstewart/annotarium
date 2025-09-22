@@ -863,6 +863,7 @@ class GFF3Tarium:
         self.contigs.add(feature.contig)
         
         # Deduplicate ID in case this is necessary
+        previousID = feature.ID
         newID = self._get_unique_feature_id(newIDPrefix, separator="_")
         feature.ID = newID
         
@@ -877,7 +878,7 @@ class GFF3Tarium:
             else:
                 child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # replace previous ID with potentially updated/deduplicated ID
             
-            if newIDPrefix == newID:
+            if newID == previousID:
                 self.update_feature(child, child.ID, merging) # maintain the child's ID if the parent needed no changes
             else:
                 self.update_feature(child, f"{newID}.{child.ftype}{i+1}", merging) # propagate the new ID system to downstream children
