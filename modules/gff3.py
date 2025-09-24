@@ -876,7 +876,7 @@ class GFF3Tarium:
             if merging: # i.e., this is a feature coming from another GFF3Tarium object
                 child.parents = set([newID]) # remove previous object's parents
             else:
-                child.parents = set([newID] + [ p for p in child.parents if p != feature.ID ]) # replace previous ID with potentially updated/deduplicated ID
+                child.parents = set([newID] + [ p for p in child.parents if p != previousID ]) # replace previous ID with potentially updated/deduplicated ID
             
             if newID == previousID:
                 self.update_feature(child, child.ID, merging) # maintain the child's ID if the parent needed no changes
@@ -988,7 +988,12 @@ class GFF3Tarium:
         return iter(self.features.values())
     
     def __contains__(self, item):
-        return item.ID in self.features
+        if isinstance(item, str):
+            return item in self.features
+        elif hasattr(item, "isGFF3Feature") and item.isGFF3Feature:
+            return item.ID in self.features
+        else:
+            raise TypeError(f"Cannot check if '{type(item)}' type is in this GFF3Tarium instance")
     
     def has_key(self, key):
         return key in self.features
