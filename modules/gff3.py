@@ -869,6 +869,7 @@ class GFF3Tarium:
         
         # Store in .features and .ftypes
         self.features[feature.ID] = feature # index the renamed feature
+        self.ftypes.setdefault(feature.ftype, []) # necessary if we are merging a subfeature in for the first time
         self.ftypes[feature.ftype].append(feature.ID) # add the feature ID into the ftypes iterable
         
         # Recursively update children
