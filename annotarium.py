@@ -10,12 +10,12 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_f, validate_f_stats, validate_f_explode, \
-    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
+    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_rnammer, \
     validate_irf
 from modules.fasta import fasta_stats, fasta_explode
-from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, \
+from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
@@ -41,6 +41,34 @@ def main():
     
     subparsers = subParentParser.add_subparsers(dest="mode",
                                                 required=True)
+    
+    # Apollo subparser
+    aparser = subparsers.add_parser("apollo",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="Apollo file handling")
+    aparser.set_defaults(func=fmain)
+    
+    subApolloParsers = aparser.add_subparsers(dest="apolloMode",
+                                              required=True)
+    
+    # Apollo > rename mode
+    arenameparser = subApolloParsers.add_parser("rename",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Rename Apollo annotations")
+    
+    # Apollo > update mode
+    aupdateparser = subApolloParsers.add_parser("update",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Update genome based on Apollo artifacts")
+    
+    # Apollo > pipeline mode
+    apipelineparser = subApolloParsers.add_parser("pipeline",
+                                                  parents=[p],
+                                                  add_help=False,
+                                                  help="Automatically integrate Apollo GFF3 into existing GFF3")
     
     # FASTA subparser
     fparser = subparsers.add_parser("fasta",
@@ -128,6 +156,28 @@ def main():
                               help="""Specify the percentage overlap of two models before they are considered
                               as duplicates and hence rejected or replaced; default == 0.6; equivalent to 60 percent.""",
                               default=0.6)
+    
+    # GFF3 > pcr mode
+    gpcrparser = subGFF3Parsers.add_parser("pcr",
+                                           parents=[p],
+                                           add_help=False,
+                                           help="Extract gene model fragments for e.g., PCR primer design")
+    gpcrparser.add_argument("-i", dest="gff3File",
+                            required=True,
+                            help="Location of GFF3 file")
+    gpcrparser.add_argument("-f", dest="fastaFile",
+                            required=True,
+                            help="Location of FASTA (e.g., genome) file")
+    gpcrparser.add_argument("-m", dest="modelIdentifier",
+                            required=True,
+                            help="Identifier for GFF3 feature to model")
+    gpcrparser.add_argument("-o", dest="outputFileName",
+                            required=True,
+                            help="Location to write model output")
+    gpcrparser.add_argument("--buffer", dest="buffer",
+                            required=False,
+                            type=int,
+                            help="Optionally obtain the provided length of surrounding sequence")
     
     # GFF3 > filter mode
     gfilterparser = subGFF3Parsers.add_parser("filter",
@@ -327,6 +377,7 @@ def main():
                            help="""Optionally filter IRs < this percentage identity (0-100); 
                            set to 0 for no filtering""",
                            default=0)
+    
     # RNAmmer mode
     rnammerparser = subparsers.add_parser("rnammer",
                                           parents=[p],
@@ -394,6 +445,10 @@ def gmain(args):
         print("## GFF3 attribute annotation ##")
         validate_g_annotate(args) # sets args.columnAttributeDelimiter
         gff3_annotate(args)
+    if args.gff3Mode == "pcr":
+        print("## GFF3 PCR model ##")
+        validate_g_pcr(args)
+        gff3_pcr(args)
     if args.gff3Mode == "to":
         validate_g_to(args)
         if args.gff3ToMode == "fasta":

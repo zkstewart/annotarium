@@ -136,6 +136,20 @@ def validate_g_merge(args):
         if os.path.exists(args.outputDetailsName):
             raise FileExistsError(f"Details output file (--outputDetails {args.outputDetailsName}) already exists!")
 
+def validate_g_pcr(args):
+    '''
+    Validation for arguments used in "gff3 model" mode.
+    '''
+    # Validate FASTA file
+    args.fastaFile = os.path.abspath(args.fastaFile)
+    if not os.path.isfile(args.fastaFile):
+        raise FileNotFoundError(f"FASTA file (-f {args.fastaFile}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_g_filter(args):
     '''
     Validation for arguments used in "gff3 filter" mode.
@@ -205,7 +219,7 @@ def validate_g_to_fasta(args):
     
     # Validate that output files do not already exist
     for seqType, outputFileName in args.outputFileNames.items():
-        if os.path.exists(outputFileName):
+        if outputFileName != None and os.path.exists(outputFileName):
             raise FileExistsError(f"--types {seqType} output '{outputFileName}' already exists!")
     
     # Ensure that translationTable value is sensible

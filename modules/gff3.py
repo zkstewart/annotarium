@@ -195,7 +195,9 @@ class GFF3Feature:
     
     @children.setter
     def children(self, value):
-        if isinstance(value, list):
+        if value == None:
+            pass
+        elif isinstance(value, list):
             for child in value:
                 self.add_child(child) # ensure each child is added properly
         else:
@@ -354,6 +356,113 @@ class GFF3Feature:
             seqObj = seqObj.reverse_complement()
         
         return seqObj
+    
+    def as_pcr_model(self, fastaObj, buffer=None):
+        '''
+        Making use of a GFF3Tarium and FASTATarium object, we can render a FASTA-style
+        output that is useful for PCR work which needs UTRs, CDS, introns, and possibly
+        a buffer window left and right of a gene.
+        
+        Parameters:
+            fastaObj -- a FASTATarium or Sequence object with sequence corresponding
+                        to this feature
+            buffer -- an integer for the +/- window of genomic sequence surrounding the
+                      gene model to output OR None for no buffer output
+        Returns:
+            sequenceObjects -- a list of Sequence objects corresponding to the gene model components
+                               with respect to the genome's orientation
+                               i.e., no reverse complementing will be performed.
+        '''
+        if buffer == None:
+            pass
+        elif not isinstance(buffer, int):
+            raise TypeError(f"buffer should be int, but is instead '{type(buffer).__name__}'")
+        elif buffer < 0:
+            raise ValueError(f"buffer should be a positive int, but is instead {buffer}")
+        
+        # Establish a PCR model GFF3Feature
+        pcrModel = GFF3Feature("pcrmodel", "PCR", start=self.start - (buffer if buffer != None else 0),
+                               end=self.end + (buffer if buffer != None else 0), strand="+",
+                               contig=self.contig)
+        
+        # Obtain subfeatures in sorted order
+        sortedCDS = sorted(self.CDS, key = lambda x: (x.start, x.end))
+        sortedExons = sorted(self.exon, key = lambda x: (x.start, x.end))
+        
+        # Derive implied features
+        intronFeatures = [
+            GFF3Feature(f"intron{i+1}", "intron", start=sortedExons[i].end+1, end=exonFeature.start-1, strand=exonFeature.strand,
+                        contig=exonFeature.contig, parents=pcrModel.ID)
+            for i, exonFeature in enumerate(sortedExons[1:])
+        ]
+        
+        leftUTRFeatures = []
+        if sortedExons[0].start != sortedCDS[0].start:
+            for exonFeature in sortedExons:
+                if Coordinates.isOverlapping(exonFeature.start, exonFeature.end,
+                                             sortedCDS[0].start, sortedCDS[0].end):
+                    if exonFeature.start != sortedCDS[0].start:
+                        leftUTR = GFF3Feature(f"leftUTR{len(leftUTRFeatures)+1}", "left_UTR", start=exonFeature.start,
+                                              end=sortedCDS[0].start-1, strand="+", contig=exonFeature.contig,
+                                              parents=pcrModel.ID)
+                        leftUTRFeatures.append(leftUTR)
+                    break
+                else:
+                    leftUTR = GFF3Feature(f"leftUTR{len(leftUTRFeatures)+1}", "left_UTR", start=exonFeature.start,
+                                          end=exonFeature.end, strand="+", contig=exonFeature.contig,
+                                          parents=pcrModel.ID)
+                    leftUTRFeatures.append(leftUTR)
+        
+        rightUTRFeatures = []
+        if sortedExons[-1].end != sortedCDS[-1].end:
+            for exonFeature in reversed(sortedExons):
+                if Coordinates.isOverlapping(exonFeature.start, exonFeature.end,
+                                             sortedCDS[-1].start, sortedCDS[-1].end):
+                    if exonFeature.end != sortedCDS[-1].end:
+                        rightUTR = GFF3Feature(f"rightUTR{len(rightUTRFeatures)+1}", "right_UTR", start=sortedCDS[-1].end+1,
+                                            end=exonFeature.end, strand="+", contig=exonFeature.contig,
+                                            parents=pcrModel.ID)
+                        rightUTRFeatures.append(rightUTR)
+                    break
+                else:
+                    rightUTR = GFF3Feature(f"rightUTR{len(rightUTRFeatures)+1}", "right_UTR", start=exonFeature.start,
+                                           end=exonFeature.end, strand="+", contig=exonFeature.contig,
+                                           parents=pcrModel.ID)
+                    rightUTRFeatures.append(rightUTR)
+        
+        # Add children to the PCR model feature
+        for utr in leftUTRFeatures:
+            pcrModel.add_child(utr)
+        for i, cds in enumerate(sortedCDS):
+            cdsFeature = GFF3Feature(f"cds{i+1}", "CDS", start=cds.start, end=cds.end, strand=cds.strand,
+                        contig=cds.contig, parents=pcrModel.ID)
+            pcrModel.add_child(cdsFeature)
+        for intron in intronFeatures:
+            pcrModel.add_child(intron)
+        for utr in rightUTRFeatures:
+            pcrModel.add_child(utr)
+        
+        # Add buffer if appropriate
+        if buffer != None and buffer != 0:
+            leftBuffer = GFF3Feature(f"leftBuffer", "buffer", start=self.start-buffer, end=self.start-1, strand=self.strand,
+                                     contig=self.contig, parents=pcrModel.ID)
+            pcrModel.add_child(leftBuffer)
+            
+            rightBuffer = GFF3Feature(f"rightBuffer", "buffer", start=self.end+1, end=self.end+buffer, strand=self.strand,
+                                      contig=self.contig, parents=pcrModel.ID)
+            pcrModel.add_child(rightBuffer)
+        
+        # Obtain all child features in sorted order
+        features = sorted(pcrModel.children, key = lambda x: (x.start, x.end))
+        
+        # Format each feature as a Sequence object
+        sequenceObjects = []
+        for feature in features:
+            sequence = str(feature.as_sequence(fastaObj))
+            seqObj = Sequence(feature.ID, sequence)
+            sequenceObjects.append(seqObj)
+        
+        return sequenceObjects
     
     def __str__(self):
         return "\t".join([
@@ -1067,6 +1176,32 @@ def gff3_merge(args):
                     fileOut.write(f"{geneID} \ {formattedIDs}\n")
             else:
                 fileOut.write("\n")
+
+def gff3_pcr(args):
+    # Load in requisite data
+    fasta = FASTATarium(args.fastaFile)
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Obtain the feature
+    try:
+        originalFeature = gff3[args.modelIdentifier]
+    except KeyError:
+        raise KeyError(f"-m value '{args.modelIdentifier}' was not found as a feature ID in '{args.gff3File}'")
+    
+    # Obtain representative isoform if modelIdentifier is parent-level
+    feature = gff3.longest_feature(originalFeature)
+    if feature.ID != args.modelIdentifier:
+        if len(originalFeature.children) > 1:
+            print(f"# Note: '{args.modelIdentifier}' had its longest isoform '{feature.ID}' chosen implicitly; " + 
+                  "if you want to choose a different isoform, specify that with -m instead")
+    
+    # Get the PCR model sequence objects
+    sequenceObjects = feature.as_pcr_model(fasta, buffer=args.buffer)
+    
+    # Write output
+    with open(args.outputFileName, "w") as fileOut:
+        for sequenceObject in sequenceObjects:
+            fileOut.write(sequenceObject.format())
 
 def gff3_filter(args):
     # Parse list file (if applicable)
