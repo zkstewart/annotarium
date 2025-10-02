@@ -391,7 +391,9 @@ class GFF3Feature:
         
         # Derive implied features
         intronFeatures = [
-            GFF3Feature(f"intron{i+1}", "intron", start=sortedExons[i].end+1, end=exonFeature.start-1, strand=exonFeature.strand,
+            GFF3Feature(f"{self.ID}_intron{i+1}_{sortedExons[i].end+1}-{exonFeature.start-1}",
+                        "intron", strand=exonFeature.strand,
+                        start=sortedExons[i].end+1, end=exonFeature.start-1,
                         contig=exonFeature.contig, parents=pcrModel.ID)
             for i, exonFeature in enumerate(sortedExons[1:])
         ]
@@ -402,14 +404,18 @@ class GFF3Feature:
                 if Coordinates.isOverlapping(exonFeature.start, exonFeature.end,
                                              sortedCDS[0].start, sortedCDS[0].end):
                     if exonFeature.start != sortedCDS[0].start:
-                        leftUTR = GFF3Feature(f"leftUTR{len(leftUTRFeatures)+1}", "left_UTR", start=exonFeature.start,
-                                              end=sortedCDS[0].start-1, strand="+", contig=exonFeature.contig,
+                        leftUTR = GFF3Feature(f"{self.ID}_leftUTR{len(leftUTRFeatures)+1}_{exonFeature.start}-{sortedCDS[0].start-1}",
+                                              "left_UTR", strand="+",
+                                              start=exonFeature.start, end=sortedCDS[0].start-1,
+                                              contig=exonFeature.contig,
                                               parents=pcrModel.ID)
                         leftUTRFeatures.append(leftUTR)
                     break
                 else:
-                    leftUTR = GFF3Feature(f"leftUTR{len(leftUTRFeatures)+1}", "left_UTR", start=exonFeature.start,
-                                          end=exonFeature.end, strand="+", contig=exonFeature.contig,
+                    leftUTR = GFF3Feature(f"{self.ID}_leftUTR{len(leftUTRFeatures)+1}_{exonFeature.start}-{exonFeature.end}",
+                                          "left_UTR", strand="+",
+                                          start=exonFeature.start, end=exonFeature.end,
+                                          contig=exonFeature.contig,
                                           parents=pcrModel.ID)
                     leftUTRFeatures.append(leftUTR)
         
@@ -419,14 +425,18 @@ class GFF3Feature:
                 if Coordinates.isOverlapping(exonFeature.start, exonFeature.end,
                                              sortedCDS[-1].start, sortedCDS[-1].end):
                     if exonFeature.end != sortedCDS[-1].end:
-                        rightUTR = GFF3Feature(f"rightUTR{len(rightUTRFeatures)+1}", "right_UTR", start=sortedCDS[-1].end+1,
-                                            end=exonFeature.end, strand="+", contig=exonFeature.contig,
-                                            parents=pcrModel.ID)
+                        rightUTR = GFF3Feature(f"{self.ID}_rightUTR{len(rightUTRFeatures)+1}_{sortedCDS[-1].end+1}-{exonFeature.end}",
+                                               "right_UTR", strand="+",
+                                               start=sortedCDS[-1].end+1, end=exonFeature.end, 
+                                               contig=exonFeature.contig,
+                                               parents=pcrModel.ID)
                         rightUTRFeatures.append(rightUTR)
                     break
                 else:
-                    rightUTR = GFF3Feature(f"rightUTR{len(rightUTRFeatures)+1}", "right_UTR", start=exonFeature.start,
-                                           end=exonFeature.end, strand="+", contig=exonFeature.contig,
+                    rightUTR = GFF3Feature(f"{self.ID}_rightUTR{len(rightUTRFeatures)+1}_{exonFeature.start}-{exonFeature.end}",
+                                           "right_UTR", strand="+",
+                                           start=exonFeature.start, end=exonFeature.end,
+                                           contig=exonFeature.contig,
                                            parents=pcrModel.ID)
                     rightUTRFeatures.append(rightUTR)
         
@@ -434,8 +444,10 @@ class GFF3Feature:
         for utr in leftUTRFeatures:
             pcrModel.add_child(utr)
         for i, cds in enumerate(sortedCDS):
-            cdsFeature = GFF3Feature(f"cds{i+1}", "CDS", start=cds.start, end=cds.end, strand=cds.strand,
-                        contig=cds.contig, parents=pcrModel.ID)
+            cdsFeature = GFF3Feature(f"{self.ID}_cds{i+1}_{cds.start}-{cds.end}",
+                                     "CDS", strand=cds.strand,
+                                     start=cds.start, end=cds.end,
+                                     contig=cds.contig, parents=pcrModel.ID)
             pcrModel.add_child(cdsFeature)
         for intron in intronFeatures:
             pcrModel.add_child(intron)
@@ -444,11 +456,15 @@ class GFF3Feature:
         
         # Add buffer if appropriate
         if buffer != None and buffer != 0:
-            leftBuffer = GFF3Feature(f"leftBuffer", "buffer", start=self.start-buffer, end=self.start-1, strand=self.strand,
+            leftBuffer = GFF3Feature(f"{self.ID}_leftBuffer_{self.start-buffer}-{self.start-1}",
+                                     "buffer", strand=self.strand,
+                                     start=self.start-buffer, end=self.start-1,
                                      contig=self.contig, parents=pcrModel.ID)
             pcrModel.add_child(leftBuffer)
             
-            rightBuffer = GFF3Feature(f"rightBuffer", "buffer", start=self.end+1, end=self.end+buffer, strand=self.strand,
+            rightBuffer = GFF3Feature(f"{self.ID}_rightBuffer_{self.end+1}-{self.end+buffer}",
+                                      "buffer", strand=self.strand,
+                                      start=self.end+1, end=self.end+buffer,
                                       contig=self.contig, parents=pcrModel.ID)
             pcrModel.add_child(rightBuffer)
         
