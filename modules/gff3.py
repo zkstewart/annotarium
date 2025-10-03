@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file, write_conditionally, parse_annotation_table
 from fasta import FASTATarium, Sequence
 from coordinates import Coordinates
+from variants import Variants, Variant
 
 class GFF3Feature:
     IMMUTABLE = ["ID", "ftype"] # these attributes should never change once set
@@ -307,41 +308,87 @@ class GFF3Feature:
             child.format(alreadyFound, recursion)
         return "\n".join(recursion) + "\n"
     
-    def as_sequence(self, fastaObj):
+    def as_sequence(self, fastaObj, variantsObj=None):
         '''
         Making use of the class objects defined in this repository, obtains
         the corresponding sequence portion identified by this GFF3Feature.
         
         Parameters:
             fastaObj -- a FASTATarium or Sequence object
+            variantsObj -- (OPTIONAL) a Variants object OR None if no edits are to be made
         Returns:
             seqObj -- a Sequence object with start and end defined by
                       self.start and self.end (and optionally self.contig)
         '''
-        if hasattr(fastaObj, "isFASTATarium") and fastaObj.isFASTATarium:
-            return fastaObj(self.contig, self.start-1, self.end) # counteract 1-based GFF3 numbering
-        elif hasattr(fastaObj, "isSequence") and fastaObj.isSequence:
-            return fastaObj[self.start-1:self.end] # counteract as well
+        # Validate fasta and variants object types
+        if not (hasattr(fastaObj, "isFASTATarium") and fastaObj.isFASTATarium):
+            raise TypeError(".as_sequence() must receive a FASTATarium object as fastaObj")
+        if variantsObj != None:
+            if not (hasattr(variantsObj, "isVariants") and variantsObj.isVariants):
+                raise TypeError(".as_sequence() must receive a Variants object as variantsObj")
+        
+        # Obtain sequence and associated variants list
+        seqObj = fastaObj(self.contig, self.start-1, self.end) # counteract 1-based GFF3 numbering
+        if variantsObj != None:
+            variantsList = variantsObj[self.contig] if self.contig in variantsObj else []
         else:
-            raise TypeError(f"Cannot obtain '{type(fastaObj)}' type as sequence")
+            variantsList = []
+        
+        # Edit and return the sequence
+        self.edit_sequence(seqObj, variantsList)
+        return seqObj
     
-    def as_gene_model(self, fastaObj, sequenceType="CDS"):
+    def edit_sequence(self, seqObj, variantsList):
+        if variantsList == None:
+            variantsList = []
+        if not isinstance(variantsList, list):
+            raise TypeError(f"edit_sequence() expected to receive a variants list but got " +
+                            f"'{type(variantsList).__name__}' type instead")
+        
+        for variant in sorted(variantsList, key = lambda x: (-x.start, -x.end)): # reverse order
+            if Coordinates.isOverlapping(self.start, self.end, variant.start, variant.end):
+                sequenceStart = variant.start - self.start # gives 0-based position w/r/t the sequence
+                sequenceEnd = variant.end - self.start # as above
+                
+                if variant.editType == "deletion":
+                    seqObj.sequence = seqObj.sequence[:sequenceStart] + seqObj.sequence[sequenceEnd+1:]
+                elif variant.editType == "substitution":
+                    seqObj.sequence = seqObj.sequence[:sequenceStart] + variant.residues + seqObj.sequence[sequenceEnd+1:]
+                elif variant.editType == "insertion":
+                    seqObj.sequence = seqObj.sequence[:sequenceStart] + variant.residues + seqObj.sequence[sequenceEnd:]
+    
+    def as_gene_model(self, fastaObj, sequenceType, variantsObj=None):
         '''
         Making use of the class objects defined in this repository, this function
         will order children of CDS or exon type and format this as a Sequence
         object corresponding to the annotation this feature represents.
+        
+        Parameters:
+            fastaObj -- a FASTATarium object
+            sequenceType -- a string to indicate whether to output "CDS" or "exon" sequences
+            variantsObj -- (OPTIONAL) a Variants object OR None if no edits are to be made
+        Returns:
+            seqObj -- a Sequence object with ID set as equal to this GFF3Feature
         '''
+        # Validate sequenceType
         ACCEPTED_TYPES = ["CDS", "exon"]
         if not sequenceType in ACCEPTED_TYPES:
             raise ValueError(f"Feature cannot be ordered by '{sequenceType}'; must be in the list '{ACCEPTED_TYPES}'")
         if not hasattr(self, sequenceType):
             raise ValueError(f"'{self.ID}' lacks any children with '{sequenceType}' type")
         
+        # Validate fasta and variants object types
+        if not (hasattr(fastaObj, "isFASTATarium") and fastaObj.isFASTATarium):
+            raise TypeError(".as_gene_model() must receive a FASTATarium object as fastaObj")
+        if variantsObj != None:
+            if not (hasattr(variantsObj, "isVariants") and variantsObj.isVariants):
+                raise TypeError(".as_gene_model() must receive a Variants object as variantsObj")
+        
         # Get the sequence as a string
         startingFrame = None
         sequence = ""
         for subFeature in sorted(getattr(self, sequenceType), key = lambda x: (x.start, x.end)):
-            sequence += str(subFeature.as_sequence(fastaObj))
+            sequence += str(subFeature.as_sequence(fastaObj, variantsObj))
             if startingFrame == None: # capture the first frame for +ve strand features
                 startingFrame = subFeature.frame
         if self.strand == "-":
@@ -357,7 +404,7 @@ class GFF3Feature:
         
         return seqObj
     
-    def as_pcr_model(self, fastaObj, buffer=None):
+    def as_pcr_model(self, fastaObj, buffer=None, variantsObj=None):
         '''
         Making use of a GFF3Tarium and FASTATarium object, we can render a FASTA-style
         output that is useful for PCR work which needs UTRs, CDS, introns, and possibly
@@ -373,12 +420,20 @@ class GFF3Feature:
                                with respect to the genome's orientation
                                i.e., no reverse complementing will be performed.
         '''
+        # Validate buffer
         if buffer == None:
             pass
         elif not isinstance(buffer, int):
             raise TypeError(f"buffer should be int, but is instead '{type(buffer).__name__}'")
         elif buffer < 0:
             raise ValueError(f"buffer should be a positive int, but is instead {buffer}")
+        
+        # Validate fasta and variants object types
+        if not (hasattr(fastaObj, "isFASTATarium") and fastaObj.isFASTATarium):
+            raise TypeError(".as_gene_model() must receive a FASTATarium object as fastaObj")
+        if variantsObj != None:
+            if not (hasattr(variantsObj, "isVariants") and variantsObj.isVariants):
+                raise TypeError(".as_gene_model() must receive a Variants object as variantsObj")
         
         # Establish a PCR model GFF3Feature
         pcrModel = GFF3Feature("pcrmodel", "PCR", start=self.start - (buffer if buffer != None else 0),
@@ -474,7 +529,7 @@ class GFF3Feature:
         # Format each feature as a Sequence object
         sequenceObjects = []
         for feature in features:
-            sequence = str(feature.as_sequence(fastaObj))
+            sequence = str(feature.as_sequence(fastaObj, variantsObj))
             seqObj = Sequence(feature.ID, sequence)
             sequenceObjects.append(seqObj)
         
@@ -520,6 +575,12 @@ class GFF3Tarium:
         # "gene": None  # Gene is the top-level feature, no parent should be inferred
     }
     SEMICOLON_REGEX = re.compile(r";{2,}")
+    ARTIFACT_FTYPES = {
+        "insertion_artifact": "insertion", # allow replacement with universal edit type identifier
+        "deletion_artifact": "deletion",
+        "substitution_artifact": "substitution"
+    }
+    
     
     @staticmethod
     def format_attributes(attributes):
@@ -890,6 +951,38 @@ class GFF3Tarium:
                 if len(feature.parents) == 0: # we don't trust the GFF3 file to have an ftype ALWAYS be a parent or a child
                     yield feature
     
+    @property
+    def artifacts(self):
+        '''
+        Identifies all apollo artifact features indexed under this GFF3Tarium object
+        to yield. These features indicate sequence edits which must be considered when
+        generating sequences.
+        '''
+        for artifactFtype in GFF3Tarium.ARTIFACT_FTYPES:
+            if artifactFtype in self.ftypes:
+                for featureID in self.ftypes[artifactFtype]:
+                    yield self[featureID]
+    
+    def get_variants(self):
+        '''
+        Converts apollo artifacts indexed under this GFF3Tarium object into a universal
+        Variants class object.
+        
+        Returns:
+            variants -- a Variants object which indexes Variant objects; object behaves like
+                        a dictionary
+        '''
+        variants = Variants()
+        for artifactFeature in self.artifacts:
+            variant = Variant(artifactFeature.contig, artifactFeature.start, artifactFeature.end,
+                              GFF3Tarium.ARTIFACT_FTYPES[artifactFeature.ftype],
+                              artifactFeature.attributes["residues"]
+                              if artifactFeature.ftype != "deletion_artifact"
+                              else None
+            )
+            variants.add(variant)
+        return variants
+    
     def get_feature_parents(self, feature, parents=None):
         '''
         Climbs up any parent(s) to get to the top-level of a given feature. Will return
@@ -1197,6 +1290,7 @@ def gff3_pcr(args):
     # Load in requisite data
     fasta = FASTATarium(args.fastaFile)
     gff3 = GFF3Tarium(args.gff3File)
+    variants = gff3.get_variants()
     
     # Obtain the feature
     try:
@@ -1212,7 +1306,7 @@ def gff3_pcr(args):
                   "if you want to choose a different isoform, specify that with -m instead")
     
     # Get the PCR model sequence objects
-    sequenceObjects = feature.as_pcr_model(fasta, buffer=args.buffer)
+    sequenceObjects = feature.as_pcr_model(fasta, buffer=args.buffer, variantsObj=variants)
     
     # Write output
     with open(args.outputFileName, "w") as fileOut:
@@ -1337,13 +1431,13 @@ def gff3_to_fasta(args):
                 
                 # Format the sequence(s)
                 if "exon" in args.types:
-                    exonSequence = feature.as_gene_model(fasta, "exon")
+                    exonSequence = feature.as_gene_model(fasta, "exon", variantsObj=gff3.get_variants())
                     exonSequence.description = parentFeatureID # propagate the original ID, not the representative
                 else:
                     exonSequence = None
                 
                 if "CDS" in args.types or "protein" in args.types:
-                    cdsSequence = feature.as_gene_model(fasta, "CDS")
+                    cdsSequence = feature.as_gene_model(fasta, "CDS", variantsObj=gff3.get_variants())
                     cdsSequence.description = parentFeatureID
                     
                     if "protein" in args.types:
@@ -1377,7 +1471,7 @@ def gff3_to_tsv(args):
     
     # Perform validations that require gff3 to be parsed
     if not args.forEach in gff3.ftypes:
-        raise ValueError(f"-forEach value '{value}' is not a feature type in your GFF3")
+        raise ValueError(f"-forEach value '{args.forEach}' is not a feature type in your GFF3")
     
     # Run the query operation
     mapping = {}
