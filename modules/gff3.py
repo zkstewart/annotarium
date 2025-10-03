@@ -1259,9 +1259,10 @@ def gff3_filter(args):
             
             if args.retrieveOrRemove == "retrieve" and isSelected:
                 passedIDs.append(parentFeature.ID)
-                continue # passes selection criteria
-            elif isSelected:
-                continue # filter and remove
+                continue # if selected, retrieve this feature
+            elif args.retrieveOrRemove == "remove" and not isSelected:
+                passedIDs.append(parentFeature.ID)
+                continue # if unselected, do not remove this feature
         
         # Handle value selection
         if selectionValues != None:
@@ -1281,8 +1282,9 @@ def gff3_filter(args):
             if args.retrieveOrRemove == "retrieve" and isSelected:
                 passedIDs.append(parentFeature.ID)
                 pass # passes selection criteria
-            elif isSelected:
-                continue # filter and remove
+            elif args.retrieveOrRemove == "remove" and not isSelected:
+                passedIDs.append(parentFeature.ID)
+                continue # if unselected, do not remove this feature
     
     # Exit if no features are selected
     if len(passedIDs) == 0:
