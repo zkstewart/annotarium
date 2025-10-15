@@ -498,7 +498,7 @@ def bmain(args):
     # Split into sub-mode-specific functions
     if args.blastMode == "to":
         validate_b_to(args)
-        if args.gff3ToMode == "paralogs":
+        if args.blastToMode == "paralogs":
             print("## Blast to paralogs (reciprocal best 2 column) conversion ##")
             validate_b_to_paralogs(args)
             blast_to_paralogs(args)

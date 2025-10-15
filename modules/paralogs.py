@@ -101,6 +101,6 @@ def paralogs_annotate(args):
     # Format output file
     with open(args.outputFileName, "w") as fileOut:
         for leftDetails, rightDetails in details:
-            leftDetails = "\t".join(leftDetails)
-            rightDetails = "\t".join(rightDetails)
+            leftDetails = "\t".join(map(str, leftDetails))
+            rightDetails = "\t".join(map(str, rightDetails))
             fileOut.write(f"{leftDetails}\t{rightDetails}\n")
