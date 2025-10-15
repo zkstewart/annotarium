@@ -69,9 +69,15 @@ def validate_b(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
-def validate_b_reciprocal(args):
+def validate_b_to(args):
     '''
-    Validation for arguments used in "blast reciprocal" mode.
+    Validation for arguments common to all "blast to" mode commands.
+    '''
+    pass # no specific validation needed for this mode
+
+def validate_b_to_paralogs(args):
+    '''
+    Validation for arguments used in "blast to paralogs" mode.
     '''
     # Validate outfmt6 files
     args.inputFile1 = os.path.abspath(args.inputFile1)
@@ -275,6 +281,34 @@ def validate_g_to_gff3(args):
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_p(args):
+    '''
+    Validation for arguments common to all "paralogs" mode commands.
+    '''
+    # Validate paralogs file
+    args.paralogsFile = os.path.abspath(args.paralogsFile)
+    if not os.path.isfile(args.paralogsFile):
+        raise FileNotFoundError(f"Paralogs file (-i {args.paralogsFile}) does not exist!")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_p_annotate(args):
+    '''
+    Validation for arguments for "paralogs annotate" mode commands.
+    '''
+    # Validate GFF3 files
+    args.gff3File1 = os.path.abspath(args.gff3File1)
+    if not os.path.isfile(args.gff3File1):
+        raise FileNotFoundError(f"GFF3 file (-g1 {args.gff3File1}) does not exist!")
+    
+    args.gff3File2 = os.path.abspath(args.gff3File2)
+    if not os.path.isfile(args.gff3File2):
+        raise FileNotFoundError(f"GFF3 file (-g2 {args.gff3File2}) does not exist!")
 
 def validate_rnammer(args):
     '''

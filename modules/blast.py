@@ -22,7 +22,7 @@ class Outfmt6Parser:
         self.fileLocation = fileLocation
         self.evalue = evalue
         self.numHits = numHits
-        self.results = None
+        self.results = {}
         
         # Also set helper attribute
         self.isOutfmt6Parser = True
@@ -35,6 +35,10 @@ class Outfmt6Parser:
     def fileLocation(self, value):
         if not isinstance(value, str):
             raise TypeError(f"fileLocation should be 'str', not '{type(value).__name__}'")
+        if not os.path.isfile(value):
+            raise FileNotFoundError(f"fileLocation '{value}' does not point to an existing file location")
+        
+        self._fileLocation = value
     
     @property
     def evalue(self):
@@ -70,7 +74,7 @@ class Outfmt6Parser:
         if value <= 0:
             raise ValueError("numHits cannot be 0 or negative (which would retrieve no hits)")
         
-        self._num_hits = value
+        self._numHits = value
     
     def parse(self, indexQuery=True, indexTarget=False):
         '''
@@ -96,13 +100,15 @@ class Outfmt6Parser:
         
         blastDict = {}
         
-        with read_gz_file(self.file) as fileIn:
+        with read_gz_file(self.fileLocation) as fileIn:
             for line in fileIn:
                 # Extract details
-                qid, tid, identity, qstart, qend, tstart, tend, evalue, bitscore = line.rstrip("\r\n").split("\t")
+                qid, tid, identity, length, mismatch, gapopen, qstart, qend, \
+                    tstart, tend, evalue, bitscore = line.rstrip("\r\n").split("\t")
                 
                 identity, evalue, bitscore = float(identity), float(evalue), float(bitscore)
-                qstart, qend, tstart, tend = int(qstart), int(qend), int(tstart), int(tend)
+                length, mismatch, gapopen, qstart, qend, tstart, tend = \
+                    int(length), int(mismatch), int(gapopen), int(qstart), int(qend), int(tstart), int(tend)
                 
                 # Skip if evalue isn't significant
                 if evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
@@ -113,6 +119,7 @@ class Outfmt6Parser:
                     blastDict.setdefault(qid, [])
                     blastDict[qid].append({
                         "qid": qid, "tid": tid, "identity": identity,
+                        "length": length, "mismatch": mismatch, "gapopen": gapopen,
                         "qstart": qstart, "qend": qend, "tstart": tstart,
                         "tend": tend, "evalue": evalue, "bitscore": bitscore
                     })
@@ -120,6 +127,7 @@ class Outfmt6Parser:
                     blastDict.setdefault(tid, [])
                     blastDict[tid].append({
                         "qid": qid, "tid": tid, "identity": identity,
+                        "length": length, "mismatch": mismatch, "gapopen": gapopen,
                         "qstart": qstart, "qend": qend, "tstart": tstart,
                         "tend": tend, "evalue": evalue, "bitscore": bitscore
                     })
@@ -128,15 +136,21 @@ class Outfmt6Parser:
         for value in blastDict.values():
             value.sort(key = lambda x: (-x["bitscore"], x["evalue"])) # sort by bitscore (higher) and evalue (lower)
         
-        # Enforce num_hits threshold
+        # Enforce numHits threshold
         if self.numHits != None:
             for key in blastDict.keys():
                 blastDict[key] = blastDict[key][0:self.numHits]
         
         self.results = blastDict
     
+    def keys(self):
+        return self.results.keys()
+    
+    def items(self):
+        return self.results.items()
+    
     def __iter__(self):
-        return iter(self.results)
+        return self.results.items()
     
     def __len__(self):
         return len(self.results)
@@ -156,18 +170,20 @@ class Outfmt6Parser:
                ))
     
     def __repr__(self):
-        return "<Outfmt6Parser object; fileLocation='{0}', evalue={1}, numHits={2}".format(
-            self.file, self.evalue, self.numHits
+        return "<Outfmt6Parser object; fileLocation='{0}', evalue={1}, numHits={2}>".format(
+            self.fileLocation, self.evalue, self.numHits
         )
 
-def blast_reciprocal(args):
+def blast_to_paralogs(args):
     # Parse files 1 and 2
     results1 = Outfmt6Parser(args.inputFile1, evalue=args.evalue, numHits=1)
+    results1.parse()
     results2 = Outfmt6Parser(args.inputFile2, evalue=args.evalue, numHits=1)
+    results2.parse()
     
     # Check for reciprocity
     reciprocalHits = []
-    for qid, hits in results1:
+    for qid, hits in results1.items():
         tid = hits[0]["tid"]
         if tid in results2:
             tidMatch = results2[tid][0]["tid"] # the tid of the tid should be the qid if files are reciprocal
@@ -178,3 +194,8 @@ def blast_reciprocal(args):
     with open(args.outputFileName, "w") as fileOut:
         for qid, tid in reciprocalHits:
             fileOut.write(f"{qid}\t{tid}\n")
+    
+    # Warn user if no hits were found
+    if len(reciprocalHits) == 0:
+        print("WARNING: No reciprocal best BLAST hits were found. " + 
+              "Check your files and arguments to ensure this makes sense.")

@@ -9,16 +9,18 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_b, validate_b_reciprocal, \
+from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs, \
     validate_f, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
+    validate_p, validate_p_annotate, \
     validate_rnammer, \
     validate_irf
-from modules.blast import blast_reciprocal
+from modules.blast import blast_to_paralogs
 from modules.fasta import fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+from modules.paralogs import paralogs_annotate
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -82,25 +84,35 @@ def main():
     subBlastParsers = bparser.add_subparsers(dest="blastMode",
                                              required=True)
     
-    # Blast > reciprocal mode
-    breciprocalparser = subBlastParsers.add_parser("reciprocal",
-                                                   parents=[p],
-                                                   add_help=False,
-                                                   help="Reciprocal best hits to TSV")
-    breciprocalparser.add_argument("-i1", dest="inputFile1",
-                                   required=True,
-                                   help="Location of first outfmt6 file")
-    breciprocalparser.add_argument("-i2", dest="inputFile2",
-                                   required=True,
-                                   help="Location of second outfmt6 file")
-    breciprocalparser.add_argument("-o", dest="outputFileName",
-                                   required=True,
-                                   help="Output TSV (2 columns; queryid targetid) file name")
-    breciprocalparser.add_argument("--evalue", dest="evalue",
-                                   required=False,
-                                   type=float,
-                                   help="Optionally ignore hits with worse than this evalue",
-                                   default=None)
+    # Blast > to subparser
+    btoparser = subBlastParsers.add_parser("to",
+                                           parents=[p],
+                                           add_help=False,
+                                           help="Blast results file conversion")
+    btoparser.set_defaults(func=bmain)
+    
+    subBlastToParsers = btoparser.add_subparsers(dest="blastToMode",
+                                                 required=True)
+    
+    # Blast > to > paralogs mode
+    btopparser = subBlastToParsers.add_parser("paralogs",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="Blast to paralogs TSV (reciprocal best) conversion")
+    btopparser.add_argument("-i1", dest="inputFile1",
+                            required=True,
+                            help="Location of first outfmt6 file")
+    btopparser.add_argument("-i2", dest="inputFile2",
+                            required=True,
+                            help="Location of second outfmt6 file")
+    btopparser.add_argument("-o", dest="outputFileName",
+                            required=True,
+                            help="Output TSV (2 columns; queryid targetid) file name")
+    btopparser.add_argument("--evalue", dest="evalue",
+                            required=False,
+                            type=float,
+                            help="Optionally ignore hits with worse than this evalue",
+                            default=None)
     
     # FASTA subparser
     fparser = subparsers.add_parser("fasta",
@@ -273,7 +285,7 @@ def main():
                                              parents=[p],
                                              add_help=False,
                                              help="GFF3 conversion")
-    gff3toparser.set_defaults(func=fmain)
+    gff3toparser.set_defaults(func=gmain)
     
     subGFF3ToParsers = gff3toparser.add_subparsers(dest="gff3ToMode",
                                                    required=True)
@@ -371,6 +383,34 @@ def main():
                                required=True,
                                help="Location to write GFF3 output")
     
+    # Paralogs subparser
+    pparser = subparsers.add_parser("paralogs",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="Paralogs TSV file handling")
+    pparser.set_defaults(func=pmain)
+    
+    subParalogsParsers = pparser.add_subparsers(dest="paralogsMode",
+                                            required=True)
+    
+    # Paralogs > annotate mode
+    pannotateparser = subParalogsParsers.add_parser("annotate",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Annotate a paralogs file with GFF3 details")
+    pannotateparser.add_argument("-i", dest="paralogsFile",
+                                 required=True,
+                                 help="Location of paralogs file")
+    pannotateparser.add_argument("-g1", dest="gff3File1",
+                                 required=True,
+                                 help="Location of GFF3 file (first column of paralogs)")
+    pannotateparser.add_argument("-g2", dest="gff3File2",
+                                 required=True,
+                                 help="Location of GFF3 file (second column of paralogs)")
+    pannotateparser.add_argument("-o", dest="outputFileName",
+                                 required=True,
+                                 help="Location to write statistics output")
+    
     # IRF mode
     irfparser = subparsers.add_parser("irf",
                                       parents=[p],
@@ -442,6 +482,10 @@ def main():
         print("## annotarium.py - IRF results handling ##")
         validate_irf(args)
         irfmain(args)
+    if args.mode == "paralogs":
+        print("## annotarium.py - Paralogs (2 column IDs pair) handling ##")
+        validate_p(args)
+        pmain(args)
     if args.mode == "rnammer":
         print("## annotarium.py - RNAmmer handling ##")
         validate_rnammer(args)
@@ -452,10 +496,12 @@ def main():
 
 def bmain(args):
     # Split into sub-mode-specific functions
-    if args.blastMode == "reciprocal":
-        print("## Reciprocal best hit filtering ##")
-        validate_b_reciprocal(args)
-        blast_reciprocal(args)
+    if args.blastMode == "to":
+        validate_b_to(args)
+        if args.gff3ToMode == "paralogs":
+            print("## Blast to paralogs (reciprocal best 2 column) conversion ##")
+            validate_b_to_paralogs(args)
+            blast_to_paralogs(args)
     
     print("BLAST handling complete!")
 
@@ -510,6 +556,15 @@ def gmain(args):
             gff3_to_gff3(args)
     
     print("GFF3 handling complete!")
+
+def pmain(args):
+    # Split into sub-mode-specific functions
+    if args.paralogsMode == "annotate":
+        print("## Paralogs annotation with GFF3 details ##")
+        validate_p_annotate(args)
+        paralogs_annotate(args)
+    
+    print("Paralogs handling complete!")
 
 def irfmain(args):
     irf_to_gff3(args)
