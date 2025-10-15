@@ -9,11 +9,13 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_f, validate_f_stats, validate_f_explode, \
+from modules.validation import validate_b, validate_b_reciprocal, \
+    validate_f, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_rnammer, \
     validate_irf
+from modules.blast import blast_reciprocal
 from modules.fasta import fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -69,6 +71,36 @@ def main():
                                                   parents=[p],
                                                   add_help=False,
                                                   help="Automatically integrate Apollo GFF3 into existing GFF3")
+    
+    # Blast subparser
+    bparser = subparsers.add_parser("blast",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="BLAST (/MMseqs2) handling")
+    bparser.set_defaults(func=bmain)
+    
+    subBlastParsers = bparser.add_subparsers(dest="blastMode",
+                                             required=True)
+    
+    # Blast > reciprocal mode
+    breciprocalparser = subBlastParsers.add_parser("reciprocal",
+                                                   parents=[p],
+                                                   add_help=False,
+                                                   help="Reciprocal best hits to TSV")
+    breciprocalparser.add_argument("-i1", dest="inputFile1",
+                                   required=True,
+                                   help="Location of first outfmt6 file")
+    breciprocalparser.add_argument("-i2", dest="inputFile2",
+                                   required=True,
+                                   help="Location of second outfmt6 file")
+    breciprocalparser.add_argument("-o", dest="outputFileName",
+                                   required=True,
+                                   help="Output TSV (2 columns; queryid targetid) file name")
+    breciprocalparser.add_argument("--evalue", dest="evalue",
+                                   required=False,
+                                   type=float,
+                                   help="Optionally ignore hits with worse than this evalue",
+                                   default=None)
     
     # FASTA subparser
     fparser = subparsers.add_parser("fasta",
@@ -394,6 +426,10 @@ def main():
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
+    if args.mode == "blast":
+        print("## annotarium.py - BLAST handling ##")
+        validate_b(args)
+        bmain(args)
     if args.mode == "fasta":
         print("## annotarium.py - FASTA handling ##")
         validate_f(args)
@@ -413,6 +449,15 @@ def main():
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
+
+def bmain(args):
+    # Split into sub-mode-specific functions
+    if args.blastMode == "reciprocal":
+        print("## Reciprocal best hit filtering ##")
+        validate_b_reciprocal(args)
+        blast_reciprocal(args)
+    
+    print("BLAST handling complete!")
 
 def fmain(args):
     # Split into sub-mode-specific functions

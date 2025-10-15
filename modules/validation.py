@@ -59,6 +59,34 @@ def parse_annotate(columnAttributeDelimiter):
         annotateValues.append([column, attribute, delimiter if delimiter != "" else None])
     return annotateValues
 
+def validate_b(args):
+    '''
+    Validation for arguments common to all "blast" mode commands.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_b_reciprocal(args):
+    '''
+    Validation for arguments used in "blast reciprocal" mode.
+    '''
+    # Validate outfmt6 files
+    args.inputFile1 = os.path.abspath(args.inputFile1)
+    if not os.path.isfile(args.inputFile1):
+        raise FileNotFoundError(f"outfmt6 file (-i1 {args.inputFile1}) does not exist!")
+    
+    args.inputFile2 = os.path.abspath(args.inputFile2)
+    if not os.path.isfile(args.inputFile2):
+        raise FileNotFoundError(f"outfmt6 file (-i2 {args.inputFile2}) does not exist!")
+    
+    # Validate numeric arguments
+    if args.evalue != None:
+        if args.evalue < 0:
+            raise ValueError("--evalue must >= 0")
+
 def validate_f(args):
     '''
     Validation for arguments common to all "fasta" mode commands.
