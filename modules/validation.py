@@ -102,6 +102,16 @@ def validate_f(args):
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-i {args.fastaFile}) does not exist!")
 
+def validate_f_softmask(args):
+    '''
+    Validation for arguments used in "fasta softmask" mode.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_f_stats(args):
     '''
     Validation for arguments used in "fasta stats" mode.
