@@ -111,7 +111,7 @@ class Outfmt6Parser:
                     int(length), int(mismatch), int(gapopen), int(qstart), int(qend), int(tstart), int(tend)
                 
                 # Skip if evalue isn't significant
-                if evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
+                if self.evalue != None and evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
                     continue
                 
                 # Store result
