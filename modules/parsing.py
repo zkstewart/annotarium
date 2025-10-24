@@ -57,6 +57,7 @@ def parse_annotation_table(fileName, delimiter="\t"):
                     first column's value which should correspond to
                     the ID.
     '''
+    alreadyWarned = False
     header = None
     with open(fileName, "r") as fileIn:
         for line in fileIn:
@@ -67,5 +68,12 @@ def parse_annotation_table(fileName, delimiter="\t"):
                 continue
             
             dataDict = {"leftcolumn": sl[0]}
-            dataDict.update({ h:sl[i] for h, i in headerIndex.items() })
+            try:
+                dataDict.update({ h:sl[i] for h, i in headerIndex.items() })
+            except:
+                dataDict.update({ h:"." for h, i in headerIndex.items() })
+                if not alreadyWarned:
+                    print(f"WARNING: line '{sl}' does not have '{len(headerIndex)}' columns as expected;" + 
+                          " this and similar gene lines will have '.' values imputed for all columns")
+                    alreadyWarned = True
             yield dataDict
