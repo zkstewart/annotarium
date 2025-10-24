@@ -104,3 +104,30 @@ def paralogs_annotate(args):
             leftDetails = "\t".join(map(str, leftDetails))
             rightDetails = "\t".join(map(str, rightDetails))
             fileOut.write(f"{leftDetails}\t{rightDetails}\n")
+
+def paralogs_to_bedpe(args):
+    # Parse paralogs file
+    paralogs = ParalogsParser(args.paralogsFile)
+    
+    # Parse GFF3 files 1 and 2
+    gff3_1 = GFF3Tarium(args.gff3File1)
+    gff3_2 = GFF3Tarium(args.gff3File2)
+    
+    # Format paralog details in BEDPE format
+    details = []
+    for leftID, rightID in paralogs:
+        leftFeature = gff3_1[leftID]
+        rightFeature = gff3_2[rightID]
+        
+        leftDetails = [leftFeature.contig, leftFeature.start, leftFeature.end]
+        rightDetails = [rightFeature.contig, rightFeature.start, rightFeature.end]
+        
+        details.append([leftDetails, rightDetails])
+    details.sort(key = lambda x: (x[0][0], x[0][1])) # sort by contig, start of left feature details
+    
+    # Format output file
+    with open(args.outputFileName, "w") as fileOut:
+        for leftDetails, rightDetails in details:
+            leftDetails = "\t".join(map(str, leftDetails))
+            rightDetails = "\t".join(map(str, rightDetails))
+            fileOut.write(f"{leftDetails}\t{rightDetails}\n")

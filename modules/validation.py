@@ -320,6 +320,25 @@ def validate_p_annotate(args):
     if not os.path.isfile(args.gff3File2):
         raise FileNotFoundError(f"GFF3 file (-g2 {args.gff3File2}) does not exist!")
 
+def validate_p_to(args):
+    '''
+    Validation for arguments common to all "paralogs to" mode commands.
+    '''
+    pass # no specific validation needed for this mode
+
+def validate_p_to_bedpe(args):
+    '''
+    Validation for arguments for "paralogs to bedpe" mode commands.
+    '''
+    # Validate GFF3 files
+    args.gff3File1 = os.path.abspath(args.gff3File1)
+    if not os.path.isfile(args.gff3File1):
+        raise FileNotFoundError(f"GFF3 file (-g1 {args.gff3File1}) does not exist!")
+    
+    args.gff3File2 = os.path.abspath(args.gff3File2)
+    if not os.path.isfile(args.gff3File2):
+        raise FileNotFoundError(f"GFF3 file (-g2 {args.gff3File2}) does not exist!")
+
 def validate_rnammer(args):
     '''
     Validation for arguments used in "rnammer" mode.

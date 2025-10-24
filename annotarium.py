@@ -13,14 +13,14 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
-    validate_p, validate_p_annotate, \
+    validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer, \
     validate_irf
 from modules.blast import blast_to_paralogs
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
-from modules.paralogs import paralogs_annotate
+from modules.paralogs import paralogs_annotate, paralogs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -423,6 +423,34 @@ def main():
                                  required=True,
                                  help="Location to write statistics output")
     
+    # Paralogs > to subparser
+    paralogstoparser = subParalogsParsers.add_parser("to",
+                                                     parents=[p],
+                                                     add_help=False,
+                                                     help="Paralogs conversion")
+    paralogstoparser.set_defaults(func=pmain)
+    
+    subParalogsToParsers = paralogstoparser.add_subparsers(dest="paralogsToMode",
+                                                           required=True)
+    
+    # Paralogs > to > BEDPE mode
+    ptobedpeparser = subParalogsToParsers.add_parser("bedpe",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Paralogs to BEDPE conversion")
+    ptobedpeparser.add_argument("-i", dest="paralogsFile",
+                                required=True,
+                                help="Location of paralogs file")
+    ptobedpeparser.add_argument("-g1", dest="gff3File1",
+                                required=True,
+                                help="Location of GFF3 file (first column of paralogs)")
+    ptobedpeparser.add_argument("-g2", dest="gff3File2",
+                                required=True,
+                                help="Location of GFF3 file (second column of paralogs)")
+    ptobedpeparser.add_argument("-o", dest="outputFileName",
+                                required=True,
+                                help="Location to write BEDPE output")
+    
     # IRF mode
     irfparser = subparsers.add_parser("irf",
                                       parents=[p],
@@ -579,6 +607,12 @@ def pmain(args):
         print("## Paralogs annotation with GFF3 details ##")
         validate_p_annotate(args)
         paralogs_annotate(args)
+    if args.paralogsMode == "to":
+        validate_p_to(args)
+        if args.paralogsToMode == "bedpe":
+            print("## Paralogs to BEDPE conversion ##")
+            validate_p_to_bedpe(args)
+            paralogs_to_bedpe(args)
     
     print("Paralogs handling complete!")
 
