@@ -1420,6 +1420,7 @@ def gff3_to_fasta(args):
     fasta = FASTATarium(args.fastaFile)
     gff3 = GFF3Tarium(args.gff3File)
     
+    warnedOnce = False
     with write_conditionally(args.outputFileNames["exon"]) as exonOut, write_conditionally(args.outputFileNames["cds"]) as cdsOut, write_conditionally(args.outputFileNames["protein"]) as protOut:
         for featureType in args.features:
             if not featureType in gff3.ftypes:
@@ -1428,6 +1429,32 @@ def gff3_to_fasta(args):
             for parentFeatureID in gff3.ftypes[featureType]:
                 # Pick out the longest representative for this feature
                 feature = gff3.longest_feature(parentFeatureID)
+                
+                # Make sure we can produce each requested sequence type for this feature
+                if "exon" in args.types:
+                    # Prevent sequence output if we cannot create matching exon/CDS/protein files
+                    if "CDS" in args.types or "protein" in args.types:
+                        if not hasattr(feature, "exon"):
+                            raise ValueError(f"'{feature.ID}' cannot produce both 'exon' and 'CDS' sequences as it lacks 'exon' children")
+                        if not hasattr(feature, "CDS"):
+                            raise ValueError(f"'{feature.ID}' cannot produce both 'exon' and 'CDS' sequences as it lacks 'CDS' children")
+                        if not hasattr(feature, "exon"):
+                            raise ValueError(f"'{feature.ID}' cannot produce both 'exon' and 'CDS' sequences as it lacks 'exon' children")
+                    # Allow skipping of exon output if it would not affect matching of files
+                    elif not hasattr(feature, "exon"): # i.e., we only want 'exon' output but we can't produce it
+                        if not warnedOnce:
+                            print(f"WARNING: '{feature.ID}' is a '{featureType}' feature but it lacks 'exon' children; " +
+                                  "this and any similar sequences will be omitted from output")
+                            warnedOnce = True
+                        continue
+                
+                elif "CDS" in args.types or "protein" in args.types:
+                    if not hasattr(feature, "CDS"): # i.e., we only want 'CDS' or 'protein' output but we can't produce it
+                        if not warnedOnce:
+                            print(f"WARNING: '{feature.ID}' is a '{featureType}' feature but it lacks 'CDS' children; " +
+                                  "this and any similar sequences will be omitted from output")
+                            warnedOnce = True
+                        continue
                 
                 # Format the sequence(s)
                 if "exon" in args.types:
