@@ -1234,25 +1234,27 @@ class GFF3Tarium:
         )
 
 def gff3_stats(args):
-    try:
-        gff3 = GFF3Tarium(args.gff3File)
-    except DuplicateFeatureError:
-        print("GFF3 has duplicated features; fix this before using this GFF3")
+    def print_and_write(text, fileHandle):
+        print(text)
+        fileHandle.write(text + "\n")
     
-    # Emit details about this GFF3
-    print(f"# Num contigs with annotations = {len(gff3.contigs)}")
+    gff3 = GFF3Tarium(args.gff3File)
     
-    print(f"# Parent features")
-    for ftype in sorted(gff3.parentFtypes):
-        print("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])))
-    
-    print("# Child features")
-    otherFtypes = set(gff3.ftypes.keys()).difference(gff3.parentFtypes)
-    if len(otherFtypes) == 0:
-        print("## No child features found")
-    else:
-        for ftype in sorted(otherFtypes):
-            print("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])))
+    # Emit details about this GFF3 while writing to file
+    with open(args.outputFileName, "w") as fileOut:
+        print_and_write(f"# Num contigs with annotations = {len(gff3.contigs)}", fileOut)
+        
+        print_and_write("# Parent features", fileOut)
+        for ftype in sorted(gff3.parentFtypes):
+            print_and_write("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])), fileOut)
+        
+        otherFtypes = set(gff3.ftypes.keys()).difference(gff3.parentFtypes)
+        print_and_write("# Child features", fileOut)
+        if len(otherFtypes) == 0:
+            print_and_write("## No child features found", fileOut)
+        else:
+            for ftype in sorted(otherFtypes):
+                print_and_write("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])), fileOut)
 
 def gff3_merge(args):
     # Parse GFF3 with NCLS indexing
