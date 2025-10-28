@@ -11,14 +11,14 @@ import os, argparse, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs, \
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
-    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, \
+    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer, \
     validate_irf
 from modules.blast import blast_to_paralogs
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
-from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, \
+from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from modules.paralogs import paralogs_annotate, paralogs_to_bedpe
 from modules.irf import irf_to_gff3
@@ -234,6 +234,22 @@ def main():
                             required=False,
                             type=int,
                             help="Optionally obtain the provided length of surrounding sequence")
+    
+    # GFF3 > relabel mode
+    grelabelparser = subGFF3Parsers.add_parser("relabel",
+                                           parents=[p],
+                                           add_help=False,
+                                           help="Relabel parts of a GFF3 file")
+    grelabelparser.add_argument("-i", dest="gff3File",
+                                required=True,
+                                help="Location of GFF3 file")
+    grelabelparser.add_argument("-l", dest="listFile",
+                                required=True,
+                                help="""Location of 2-column headerless list with oldid:newid
+                                values for substitution""")
+    grelabelparser.add_argument("-o", dest="outputFileName",
+                                required=True,
+                                help="Location to write modified GFF3")
     
     # GFF3 > filter mode
     gfilterparser = subGFF3Parsers.add_parser("filter",
@@ -584,6 +600,10 @@ def gmain(args):
         print("## GFF3 PCR model ##")
         validate_g_pcr(args)
         gff3_pcr(args)
+    if args.gff3Mode == "relabel":
+        print("## GFF3 relabelling ##")
+        validate_g_relabel(args)
+        gff3_relabel(args)
     if args.gff3Mode == "to":
         validate_g_to(args)
         if args.gff3ToMode == "fasta":

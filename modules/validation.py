@@ -182,12 +182,26 @@ def validate_g_merge(args):
 
 def validate_g_pcr(args):
     '''
-    Validation for arguments used in "gff3 model" mode.
+    Validation for arguments used in "gff3 pcr" mode.
     '''
     # Validate FASTA file
     args.fastaFile = os.path.abspath(args.fastaFile)
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-f {args.fastaFile}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_g_relabel(args):
+    '''
+    Validation for arguments used in "gff3 relabel" mode.
+    '''
+    # Validate list file
+    args.listFile = os.path.abspath(args.listFile)
+    if not os.path.isfile(args.listFile):
+        raise FileNotFoundError(f"List file (-l {args.listFile}) does not exist!")
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)

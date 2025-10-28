@@ -1313,6 +1313,23 @@ def gff3_pcr(args):
         for sequenceObject in sequenceObjects:
             fileOut.write(sequenceObject.format())
 
+def gff3_relabel(args):
+    # Parse list file
+    renameList = []
+    with open(args.listFile, "r") as fileIn:
+        for line in fileIn:
+            sl = line.strip("\r\n\t").split("\t")
+            if not len(sl) == 2:
+                raise ValueError(f"List file is expected to have 2 columns; malformed line is '{line.rstrip()}'")
+            renameList.append(sl)
+    
+    # Iterate over GFF3 lines and produce output
+    with open(args.gff3File, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+        for line in fileIn:
+            for original, new in renameList:
+                line = line.replace(original, new)
+            fileOut.write(line)
+
 def gff3_filter(args):
     # Parse list file (if applicable)
     selectionValues = []
