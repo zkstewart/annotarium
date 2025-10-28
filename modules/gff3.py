@@ -1234,8 +1234,25 @@ class GFF3Tarium:
         )
 
 def gff3_stats(args):
-    raise NotImplementedError("gff3 stats mode not yet implemented")
-    return None
+    try:
+        gff3 = GFF3Tarium(args.gff3File)
+    except DuplicateFeatureError:
+        print("GFF3 has duplicated features; fix this before using this GFF3")
+    
+    # Emit details about this GFF3
+    print(f"# Num contigs with annotations = {len(gff3.contigs)}")
+    
+    print(f"# Parent features")
+    for ftype in sorted(gff3.parentFtypes):
+        print("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])))
+    
+    print("# Child features")
+    otherFtypes = set(gff3.ftypes.keys()).difference(gff3.parentFtypes)
+    if len(otherFtypes) == 0:
+        print("## No child features found")
+    else:
+        for ftype in sorted(otherFtypes):
+            print("## Num '{0}' = {1}".format(ftype, len(gff3.ftypes[ftype])))
 
 def gff3_merge(args):
     # Parse GFF3 with NCLS indexing
