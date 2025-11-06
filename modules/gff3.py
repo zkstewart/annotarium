@@ -1427,6 +1427,7 @@ def gff3_annotate(args):
     gff3 = GFF3Tarium(args.gff3File)
     
     # Parse and annotate all relevant attributes
+    warnedAlready = False
     for dataDict in parse_annotation_table(args.tableFile):
         # Format the attributes to annotate within our GFF3
         attributeAnnotations = {}
@@ -1445,7 +1446,11 @@ def gff3_annotate(args):
             feature = gff3[dataDict["leftcolumn"]]
         except KeyError:
             tableID = dataDict['leftcolumn']
-            raise KeyError(f"'{tableID}' from annotation table was not found in your GFF3")
+            #raise KeyError(f"'{tableID}' from annotation table was not found in your GFF3")
+            if not warnedAlready:
+                print(f"WARNING: '{tableID}' from annotation table was not found in your GFF3; further warnings will be suppressed")
+                warnedAlready = True
+            continue
         for key, value in attributeAnnotations.items():
             feature._attributes[key] = value
     
