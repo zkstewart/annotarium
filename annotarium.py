@@ -10,6 +10,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs, \
+    validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -17,6 +18,7 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs
     validate_rnammer, \
     validate_irf
 from modules.blast import blast_to_paralogs
+from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -114,6 +116,47 @@ def main():
                             help="Optionally ignore hits with worse than this evalue",
                             default=None)
     
+    # Domains subparser
+    dparser = subparsers.add_parser("domains",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="Protein domain prediction handling")
+    dparser.set_defaults(func=dmain)
+    
+    subDomainsParsers = dparser.add_subparsers(dest="domainsMode",
+                                               required=True)
+    
+    # Domains > resolve mode
+    dresolveparser = subDomainsParsers.add_parser("resolve",
+                                                  parents=[p],
+                                                  add_help=False,
+                                                  help="Resolve overlapping domain predictions")
+    dresolveparser.add_argument("-i", dest="domainsFile",
+                                required=True,
+                                help="Location of .domtblout or .domains.tsv file")
+    dresolveparser.add_argument("-o", dest="outputFileName",
+                                required=False,
+                                help="Write softmasked BED region output to file")
+    dresolveparser.add_argument("--evalue", dest="evalue",
+                                required=False,
+                                type=float,
+                                help="Optionally ignore hits with worse than this evalue",
+                                default=None)
+    dresolveparser.add_argument("--overlapPercent", dest="overlapCutoff",
+                                required=False,
+                                type=float,
+                                help="""Specify the percentage value (as a ratio from 0 to 1) under which
+                                overlaps are handled by trimming, and over which overlaps are handled
+                                by culling the domain with worse E-value; default == 0.25, equivalent
+                                to 25 percent""",
+                                default=0.25)
+    dresolveparser.add_argument("--tsv", dest="isDomainsTsvFormat",
+                                required=False,
+                                action="store_true",
+                                help="""Optionally, provide this flag if the input domains file
+                                has already been parsed into a .domains.tsv format""",
+                                default=False)
+    
     # FASTA subparser
     fparser = subparsers.add_parser("fasta",
                                     parents=[p],
@@ -210,7 +253,8 @@ def main():
                               required=False,
                               type=float,
                               help="""Specify the percentage overlap of two models before they are considered
-                              as duplicates and hence rejected or replaced; default == 0.6; equivalent to 60 percent.""",
+                              as duplicates; duplicates will not be merged from file 2 into file 1;
+                              default == 0.6, equivalent to 60 percent.""",
                               default=0.6)
     
     # GFF3 > pcr mode
@@ -391,12 +435,13 @@ def main():
                               default=False)
     gtotsvparser.add_argument("--null", dest="nullChar",
                               required=False,
-                              help="""Optionally, specify the character(s) used to denote a lack of 'map' value""",
+                              help="""Optionally, specify the character(s) used to denote a lack of 'map' value;
+                              default = '_'""",
                               default="_")
     gtotsvparser.add_argument("--sep", dest="sepChar",
                               required=False,
                               help="""Optionally, specify the character(s) used to separate multiple values of
-                              the same 'map' key""",
+                              the same 'map' key; default = ';'""",
                               default=";")
     
     # GFF3 > to > GFF3 mode
@@ -526,6 +571,10 @@ def main():
         print("## annotarium.py - BLAST handling ##")
         validate_b(args)
         bmain(args)
+    if args.mode == "domains":
+        print("## annotarium.py - Domain prediction handling ##")
+        validate_d(args)
+        dmain(args)
     if args.mode == "fasta":
         print("## annotarium.py - FASTA handling ##")
         validate_f(args)
@@ -560,6 +609,15 @@ def bmain(args):
             blast_to_paralogs(args)
     
     print("BLAST handling complete!")
+
+def dmain(args):
+    # Split into sub-mode-specific functions
+    if args.domainsMode == "resolve":
+        print("## Domain overlap resolution ##")
+        validate_d_resolve(args)
+        domains_resolve(args)
+    
+    print("Domain handling complete!")
 
 def fmain(args):
     # Split into sub-mode-specific functions

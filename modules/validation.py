@@ -69,6 +69,35 @@ def validate_b(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_d(args):
+    '''
+    Validation for arguments common to all "domains" mode commands.
+    '''
+    # Validate domains file
+    args.domainsFile = os.path.abspath(args.domainsFile)
+    if not os.path.isfile(args.domainsFile):
+        raise FileNotFoundError(f"Domains file (-i {args.domainsFile}) does not exist!")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_d_resolve(args):
+    '''
+    Validation for arguments used in "domains resolve" mode.
+    '''
+    # Validate numeric arguments
+    if args.evalue != None:
+        if args.evalue < 0:
+            raise ValueError("--evalue must >= 0")
+    
+    if args.overlapCutoff < 0:
+        raise ValueError("--overlapPercent must >= 0")
+    if args.overlapCutoff > 1:
+        raise ValueError("--overlapPercent must <= 1")
+
 def validate_b_to(args):
     '''
     Validation for arguments common to all "blast to" mode commands.
