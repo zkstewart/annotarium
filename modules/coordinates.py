@@ -165,7 +165,7 @@ class OverlapResolver:
         
         self._minScore = value
     
-    def ovl_resolver(self, featureList):
+    def _ovl_resolver(self, featureList):
         '''
         Parameters:
             featureList -- a list of any Feature-type objects, which minimally have the following attributes:
@@ -196,12 +196,12 @@ class OverlapResolver:
                 break
             
             # Resolve overlaps through looping structure
-            featureList = self.seed_looping_structure(featureList)
+            featureList = self._seed_looping_structure(featureList)
         
         featureList.sort(key = lambda x: (x.start, x.end))
         return featureList
     
-    def seed_looping_structure(self, featureList):
+    def _seed_looping_structure(self, featureList):
         # Set up
         origFeatureList = deepcopy(featureList) # This lets us compare our new domain against the original to make sure we haven't excessively cut and trimmed it
         ORIG_CUTOFF = 0.60  # Arbitrary; this means that, if the trimmed feature is less than "a bit above" the length of the original, we drop it entirely
@@ -402,6 +402,6 @@ class OverlapResolver:
         
         # Resolve non-identical domain predictions
         if len(resolvedFeatureList) != 1:
-            resolvedFeatureList = self.ovl_resolver(resolvedFeatureList) # we've merged, joined, and trimmed identical features above. Now, we're looking at different domains.
+            resolvedFeatureList = self._ovl_resolver(resolvedFeatureList) # we've merged, joined, and trimmed identical features above. Now, we're looking at different domains.
         
         return resolvedFeatureList

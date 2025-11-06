@@ -273,7 +273,25 @@ class Domains:
                 formattedPredictions = "\t".join(map(str, [ feature.to_list() for feature in domainFeatures ]))
                 fileOut.write(f"{pid}\t{formattedPredictions}\n")
     
+    def __getitem__(self, key):
+        return self.domDict[key]
+    
+    def __len__(self):
+        return len(self.domDict)
+    
     def __iter__(self):
+        return self.domDict.items()
+    
+    def __contains__(self, value):
+        return value in self.domDict
+    
+    def keys(self):
+        return self.domDict.keys()
+    
+    def values(self):
+        return self.domDict.values()
+    
+    def items(self):
         return self.domDict.items()
     
     def __repr__(self):
