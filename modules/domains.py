@@ -249,7 +249,7 @@ class Domains:
         Calls the Coordinates.OverlapResolver class to resolve overlaps within
         self.domDict. Replaces self.domDict with the resolved version.
         '''
-        resolver = OverlapResolver()
+        resolver = OverlapResolver(ovlCutoff=ovlCutoff)
         resolvedDomDict = {}
         for pid, featureList in self.domDict.items():
             resolvedDomDict[pid] = resolver.resolve(featureList)
