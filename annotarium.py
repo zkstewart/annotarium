@@ -9,7 +9,7 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs, \
+from modules.validation import validate_b, validate_b_to, validate_b_to_homologs, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
@@ -17,12 +17,12 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_paralogs
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer, \
     validate_irf
-from modules.blast import blast_to_paralogs
+from modules.blast import blast_to_homologs
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
-from modules.paralogs import paralogs_annotate, paralogs_to_bedpe
+from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -96,21 +96,21 @@ def main():
     subBlastToParsers = btoparser.add_subparsers(dest="blastToMode",
                                                  required=True)
     
-    # Blast > to > paralogs mode
-    btopparser = subBlastToParsers.add_parser("paralogs",
+    # Blast > to > homologs mode
+    btohparser = subBlastToParsers.add_parser("homologs",
                                               parents=[p],
                                               add_help=False,
-                                              help="Blast to paralogs TSV (reciprocal best) conversion")
-    btopparser.add_argument("-i1", dest="inputFile1",
+                                              help="Blast to homologs TSV (reciprocal best) conversion")
+    btohparser.add_argument("-i1", dest="inputFile1",
                             required=True,
                             help="Location of first outfmt6 file")
-    btopparser.add_argument("-i2", dest="inputFile2",
+    btohparser.add_argument("-i2", dest="inputFile2",
                             required=True,
                             help="Location of second outfmt6 file")
-    btopparser.add_argument("-o", dest="outputFileName",
+    btohparser.add_argument("-o", dest="outputFileName",
                             required=True,
                             help="Output TSV (2 columns; queryid targetid) file name")
-    btopparser.add_argument("--evalue", dest="evalue",
+    btohparser.add_argument("--evalue", dest="evalue",
                             required=False,
                             type=float,
                             help="Optionally ignore hits with worse than this evalue",
@@ -456,59 +456,59 @@ def main():
                                required=True,
                                help="Location to write GFF3 output")
     
-    # Paralogs subparser
-    pparser = subparsers.add_parser("paralogs",
+    # Homologs subparser
+    hparser = subparsers.add_parser("homologs",
                                     parents=[p],
                                     add_help=False,
-                                    help="Paralogs TSV file handling")
-    pparser.set_defaults(func=pmain)
+                                    help="Homologs TSV file handling")
+    hparser.set_defaults(func=pmain)
     
-    subParalogsParsers = pparser.add_subparsers(dest="paralogsMode",
+    subHomologsParsers = hparser.add_subparsers(dest="homologsMode",
                                             required=True)
     
-    # Paralogs > annotate mode
-    pannotateparser = subParalogsParsers.add_parser("annotate",
+    # Homologs > annotate mode
+    hannotateparser = subHomologsParsers.add_parser("annotate",
                                              parents=[p],
                                              add_help=False,
-                                             help="Annotate a paralogs file with GFF3 details")
-    pannotateparser.add_argument("-i", dest="paralogsFile",
+                                             help="Annotate a homologs file with GFF3 details")
+    hannotateparser.add_argument("-i", dest="homologsFile",
                                  required=True,
-                                 help="Location of paralogs file")
-    pannotateparser.add_argument("-g1", dest="gff3File1",
+                                 help="Location of homologs file")
+    hannotateparser.add_argument("-g1", dest="gff3File1",
                                  required=True,
-                                 help="Location of GFF3 file (first column of paralogs)")
-    pannotateparser.add_argument("-g2", dest="gff3File2",
+                                 help="Location of GFF3 file (first column of homologs)")
+    hannotateparser.add_argument("-g2", dest="gff3File2",
                                  required=True,
-                                 help="Location of GFF3 file (second column of paralogs)")
-    pannotateparser.add_argument("-o", dest="outputFileName",
+                                 help="Location of GFF3 file (second column of homologs)")
+    hannotateparser.add_argument("-o", dest="outputFileName",
                                  required=True,
                                  help="Location to write statistics output")
     
-    # Paralogs > to subparser
-    paralogstoparser = subParalogsParsers.add_parser("to",
+    # Homologs > to subparser
+    homologstoparser = subHomologsParsers.add_parser("to",
                                                      parents=[p],
                                                      add_help=False,
-                                                     help="Paralogs conversion")
-    paralogstoparser.set_defaults(func=pmain)
+                                                     help="Homologs conversion")
+    homologstoparser.set_defaults(func=pmain)
     
-    subParalogsToParsers = paralogstoparser.add_subparsers(dest="paralogsToMode",
+    subHomologsToParsers = homologstoparser.add_subparsers(dest="homologsToMode",
                                                            required=True)
     
-    # Paralogs > to > BEDPE mode
-    ptobedpeparser = subParalogsToParsers.add_parser("bedpe",
+    # Homologs > to > BEDPE mode
+    htobedpeparser = subHomologsToParsers.add_parser("bedpe",
                                              parents=[p],
                                              add_help=False,
-                                             help="Paralogs to BEDPE conversion")
-    ptobedpeparser.add_argument("-i", dest="paralogsFile",
+                                             help="Homologs to BEDPE conversion")
+    htobedpeparser.add_argument("-i", dest="homologsFile",
                                 required=True,
-                                help="Location of paralogs file")
-    ptobedpeparser.add_argument("-g1", dest="gff3File1",
+                                help="Location of homologs file")
+    htobedpeparser.add_argument("-g1", dest="gff3File1",
                                 required=True,
-                                help="Location of GFF3 file (first column of paralogs)")
-    ptobedpeparser.add_argument("-g2", dest="gff3File2",
+                                help="Location of GFF3 file (first column of homologs)")
+    htobedpeparser.add_argument("-g2", dest="gff3File2",
                                 required=True,
-                                help="Location of GFF3 file (second column of paralogs)")
-    ptobedpeparser.add_argument("-o", dest="outputFileName",
+                                help="Location of GFF3 file (second column of homologs)")
+    htobedpeparser.add_argument("-o", dest="outputFileName",
                                 required=True,
                                 help="Location to write BEDPE output")
     
@@ -587,8 +587,8 @@ def main():
         print("## annotarium.py - IRF results handling ##")
         validate_irf(args)
         irfmain(args)
-    if args.mode == "paralogs":
-        print("## annotarium.py - Paralogs (2 column IDs pair) handling ##")
+    if args.mode == "homologs":
+        print("## annotarium.py - Homologs (2 column IDs pair) handling ##")
         validate_p(args)
         pmain(args)
     if args.mode == "rnammer":
@@ -603,10 +603,10 @@ def bmain(args):
     # Split into sub-mode-specific functions
     if args.blastMode == "to":
         validate_b_to(args)
-        if args.blastToMode == "paralogs":
-            print("## Blast to paralogs (reciprocal best 2 column) conversion ##")
-            validate_b_to_paralogs(args)
-            blast_to_paralogs(args)
+        if args.blastToMode == "homologs":
+            print("## Blast to homologs (reciprocal best 2 column) conversion ##")
+            validate_b_to_homologs(args)
+            blast_to_homologs(args)
     
     print("BLAST handling complete!")
 
@@ -681,18 +681,18 @@ def gmain(args):
 
 def pmain(args):
     # Split into sub-mode-specific functions
-    if args.paralogsMode == "annotate":
-        print("## Paralogs annotation with GFF3 details ##")
+    if args.homologsMode == "annotate":
+        print("## Homologs annotation with GFF3 details ##")
         validate_p_annotate(args)
-        paralogs_annotate(args)
-    if args.paralogsMode == "to":
+        homologs_annotate(args)
+    if args.homologsMode == "to":
         validate_p_to(args)
-        if args.paralogsToMode == "bedpe":
-            print("## Paralogs to BEDPE conversion ##")
+        if args.homologsToMode == "bedpe":
+            print("## Homologs to BEDPE conversion ##")
             validate_p_to_bedpe(args)
-            paralogs_to_bedpe(args)
+            homologs_to_bedpe(args)
     
-    print("Paralogs handling complete!")
+    print("Homologs handling complete!")
 
 def irfmain(args):
     irf_to_gff3(args)

@@ -104,9 +104,9 @@ def validate_b_to(args):
     '''
     pass # no specific validation needed for this mode
 
-def validate_b_to_paralogs(args):
+def validate_b_to_homologs(args):
     '''
-    Validation for arguments used in "blast to paralogs" mode.
+    Validation for arguments used in "blast to homologs" mode.
     '''
     # Validate outfmt6 files
     args.inputFile1 = os.path.abspath(args.inputFile1)
@@ -337,12 +337,12 @@ def validate_g_to_gff3(args):
 
 def validate_p(args):
     '''
-    Validation for arguments common to all "paralogs" mode commands.
+    Validation for arguments common to all "homologs" mode commands.
     '''
-    # Validate paralogs file
-    args.paralogsFile = os.path.abspath(args.paralogsFile)
-    if not os.path.isfile(args.paralogsFile):
-        raise FileNotFoundError(f"Paralogs file (-i {args.paralogsFile}) does not exist!")
+    # Validate homologs file
+    args.homologsFile = os.path.abspath(args.homologsFile)
+    if not os.path.isfile(args.homologsFile):
+        raise FileNotFoundError(f"Homologs file (-i {args.homologsFile}) does not exist!")
     
     # Validate output file name
     if args.outputFileName != None:
@@ -352,7 +352,7 @@ def validate_p(args):
 
 def validate_p_annotate(args):
     '''
-    Validation for arguments for "paralogs annotate" mode commands.
+    Validation for arguments for "homologs annotate" mode commands.
     '''
     # Validate GFF3 files
     args.gff3File1 = os.path.abspath(args.gff3File1)
@@ -365,13 +365,13 @@ def validate_p_annotate(args):
 
 def validate_p_to(args):
     '''
-    Validation for arguments common to all "paralogs to" mode commands.
+    Validation for arguments common to all "homologs to" mode commands.
     '''
     pass # no specific validation needed for this mode
 
 def validate_p_to_bedpe(args):
     '''
-    Validation for arguments for "paralogs to bedpe" mode commands.
+    Validation for arguments for "homologs to bedpe" mode commands.
     '''
     # Validate GFF3 files
     args.gff3File1 = os.path.abspath(args.gff3File1)

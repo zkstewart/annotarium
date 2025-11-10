@@ -174,7 +174,7 @@ class Outfmt6Parser:
             self.fileLocation, self.evalue, self.numHits
         )
 
-def blast_to_paralogs(args):
+def blast_to_homologs(args):
     # Parse files 1 and 2
     results1 = Outfmt6Parser(args.inputFile1, evalue=args.evalue, numHits=1)
     results1.parse()

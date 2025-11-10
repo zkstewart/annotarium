@@ -6,9 +6,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file
 from gff3 import GFF3Tarium
 
-class ParalogsParser:
+class HomologsParser:
     '''
-    The ParalogsParser Class provides parsing capability for paralogs files
+    The HomologsParser Class provides parsing capability for homologs files
     (2 columns: seqID1 seqID2).
     
     Initialisation:
@@ -22,7 +22,7 @@ class ParalogsParser:
         self._parse()
         
         # Also set helper attribute
-        self.isParalogsParser = True
+        self.isHomologsParser = True
     
     @property
     def fileLocation(self):
@@ -71,16 +71,16 @@ class ParalogsParser:
         return True if (value in self.left or value in self.right) else False
     
     def __str__(self):
-        return (f"ParalogsParser parsed '{self.fileLocation}' and found {len(self)} paralog pairs")
+        return (f"HomologsParser parsed '{self.fileLocation}' and found {len(self)} paralog pairs")
     
     def __repr__(self):
-        return "<ParalogsParser object; fileLocation='{0}'>".format(
+        return "<HomologsParser object; fileLocation='{0}'>".format(
             self.fileLocation
         )
 
-def paralogs_annotate(args):
-    # Parse paralogs file
-    paralogs = ParalogsParser(args.paralogsFile)
+def homologs_annotate(args):
+    # Parse homologs file
+    homologs = HomologsParser(args.homologsFile)
     
     # Parse GFF3 files 1 and 2
     gff3_1 = GFF3Tarium(args.gff3File1)
@@ -88,7 +88,7 @@ def paralogs_annotate(args):
     
     # Format paralog details
     details = []
-    for leftID, rightID in paralogs:
+    for leftID, rightID in homologs:
         leftFeature = gff3_1[leftID]
         rightFeature = gff3_2[rightID]
         
@@ -105,9 +105,9 @@ def paralogs_annotate(args):
             rightDetails = "\t".join(map(str, rightDetails))
             fileOut.write(f"{leftDetails}\t{rightDetails}\n")
 
-def paralogs_to_bedpe(args):
-    # Parse paralogs file
-    paralogs = ParalogsParser(args.paralogsFile)
+def homologs_to_bedpe(args):
+    # Parse homologs file
+    homologs = HomologsParser(args.homologsFile)
     
     # Parse GFF3 files 1 and 2
     gff3_1 = GFF3Tarium(args.gff3File1)
@@ -115,7 +115,7 @@ def paralogs_to_bedpe(args):
     
     # Format paralog details in BEDPE format
     details = []
-    for leftID, rightID in paralogs:
+    for leftID, rightID in homologs:
         leftFeature = gff3_1[leftID]
         rightFeature = gff3_2[rightID]
         
