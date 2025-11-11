@@ -3,7 +3,7 @@
 import os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import read_gz_file
+from parsing import read_gz_file, GzCapableWriter
 from gff3 import GFF3Tarium
 
 class HomologsParser:
@@ -99,7 +99,7 @@ def homologs_annotate(args):
     details.sort(key = lambda x: (x[0][1], x[0][2])) # sort by contig, start of left feature details
     
     # Format output file
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         for leftDetails, rightDetails in details:
             leftDetails = "\t".join(map(str, leftDetails))
             rightDetails = "\t".join(map(str, rightDetails))
@@ -126,7 +126,7 @@ def homologs_to_bedpe(args):
     details.sort(key = lambda x: (x[0][0], x[0][1])) # sort by contig, start of left feature details
     
     # Format output file
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         for leftDetails, rightDetails in details:
             leftDetails = "\t".join(map(str, leftDetails))
             rightDetails = "\t".join(map(str, rightDetails))

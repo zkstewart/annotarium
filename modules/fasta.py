@@ -7,7 +7,7 @@ from itertools import product
 from Bio.Data import CodonTable, IUPACData
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import read_gz_file
+from parsing import read_gz_file, GzCapableWriter
 from stats import N50, count_lowercase, count_char
 
 locale.setlocale(locale.LC_ALL, "")
@@ -366,7 +366,7 @@ def fasta_softmask_to_bed(args):
     would actually be the 11th nucleotide).
     '''
     fasta = FASTATarium(args.fastaFile)
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         for record in fasta:
             seq = str(record)
             

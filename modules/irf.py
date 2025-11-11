@@ -1,8 +1,13 @@
 #! python3
 
+import os, sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import read_gz_file, GzCapableWriter
+
 def irf_to_gff3(args):
     ongoingCount = 0
-    with open(args.irfDatFile, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+    with read_gz_file(args.irfDatFile) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
         for line in fileIn:
             # Parse line
             l = line.strip()

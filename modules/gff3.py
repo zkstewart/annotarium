@@ -6,7 +6,7 @@ from ncls import NCLS
 from collections import Counter
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import read_gz_file, write_conditionally, parse_annotation_table
+from parsing import read_gz_file, write_conditionally, parse_annotation_table, GzCapableWriter
 from fasta import FASTATarium, Sequence
 from coordinates import Coordinates
 from variants import Variants, Variant
@@ -1049,7 +1049,7 @@ class GFF3Tarium:
         sortOrder.sort(key = lambda x: (x[0], x[1]))
         
         # Write ordered features to file
-        with open(outputFileName, "w") as fileOut:
+        with GzCapableWriter(outputFileName) as fileOut:
             haveWritten = set()
             for _, _, featureID in sortOrder:
                 output = self[featureID].format(haveWritten)
@@ -1241,7 +1241,7 @@ def gff3_stats(args):
     gff3 = GFF3Tarium(args.gff3File)
     
     # Emit details about this GFF3 while writing to file
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         print_and_write(f"# Num contigs with annotations = {len(gff3.contigs)}", fileOut)
         
         print_and_write("# Parent features", fileOut)
@@ -1264,21 +1264,27 @@ def gff3_merge(args):
     gff3_2 = GFF3Tarium(args.gff3File2)
     gff3_2.create_ncls_index(typeToIndex=list(gff3_2.parentFtypes))
     
+    # Store details on each file before modification
+    file1ParentNum = sum( 1 for p in gff3_1.parents )
+    file2ParentNum = sum( 1 for p in gff3_2.parents )
+    
     # Merge and write output GFF3
     isoforms, additions, rejections = gff3_1.merge_gff3(gff3_2, isoPct=args.isoformPercent, dupePct=args.duplicatePercent)
     gff3_1.write(args.outputFileName)
     
     # Print out basic statistics
-    print((f"# File 1: '{args.gff3File2}' with {sum( 1 for p in gff3_2.parents )} parent-level " + 
-           f"features was merged into file 2: '{args.gff3File}' which has {sum( 1 for p in gff3_1.parents )} " +
-           "parent-level features"))
+    print(f"# File 1: '{args.gff3File}' has {file1ParentNum} parent-level features")
+    print(f"# File 2: '{args.gff3File2}' has {file2ParentNum} parent-level features")
+    
     print(f"# {len(additions)} new parent features were added into file 1")
-    print(f"# {len(isoforms)} isoforms were added into file 2")
-    print(f"# {len(rejections)} features from file 2 were rejected due to overlap")
+    print(f"# {len(isoforms)} isoforms were added into file 1 parent-level features")
+    print(f"# {len(rejections)} features from file 2 were rejected due to overlap with existing file 1 features")
+    
+    print(f"# The output file (file 2 merged into file 1) has {sum( 1 for p in gff3_1.parents )} parent-level features")
     
     # Optionally emit merge details if requested
     if args.outputDetailsName != None:
-        with open(args.outputDetailsName, "w") as fileOut:
+        with GzCapableWriter(args.outputDetailsName) as fileOut:
             fileOut.write(f"# {len(additions)} new features added")
             if len(additions) > 0:
                 fileOut.write(", including:\n")
@@ -1328,14 +1334,14 @@ def gff3_pcr(args):
     sequenceObjects = feature.as_pcr_model(fasta, buffer=args.buffer, variantsObj=variants)
     
     # Write output
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         for sequenceObject in sequenceObjects:
             fileOut.write(sequenceObject.format())
 
 def gff3_relabel(args):
     # Parse list file
     renameList = []
-    with open(args.listFile, "r") as fileIn:
+    with read_gz_file(args.listFile) as fileIn:
         for line in fileIn:
             sl = line.strip("\r\n\t").split("\t")
             if not len(sl) == 2:
@@ -1343,7 +1349,7 @@ def gff3_relabel(args):
             renameList.append(sl)
     
     # Iterate over GFF3 lines and produce output
-    with open(args.gff3File, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+    with read_gz_file(args.gff3File) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
         for line in fileIn:
             for original, new in renameList:
                 line = line.replace(original, new)
@@ -1353,7 +1359,7 @@ def gff3_filter(args):
     # Parse list file (if applicable)
     selectionValues = []
     if args.listFile != None:
-        with open(args.listFile, "r") as fileIn:
+        with read_gz_file(args.listFile) as fileIn:
             for line in fileIn:
                 selectionValues.append(line.strip())
     

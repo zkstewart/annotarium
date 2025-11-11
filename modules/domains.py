@@ -4,6 +4,7 @@ import os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from coordinates import OverlapResolver
+from parsing import read_gz_file, GzCapableWriter
 
 class DomainFeature:
     '''
@@ -152,7 +153,7 @@ class Domains:
                             }
         '''
         domDict = {}
-        with open(fileLocation, "r") as fileIn:
+        with read_gz_file(fileLocation) as fileIn:
             for line in fileIn:
                 l = line.rstrip("\r\n\t'\" ")
                 
@@ -206,7 +207,7 @@ class Domains:
                             }
         '''
         domDict = {}
-        with open(fileLocation, "r") as fileIn:
+        with read_gz_file(fileLocation) as fileIn:
             for line in fileIn:
                 l = line.rstrip("\r\n\t'\" ")
                 
@@ -268,7 +269,7 @@ class Domains:
         if os.path.exists(outputFileLocation):
             raise FileExistsError(f".write_parsed_domtblout() will not overwrite '{outputFileLocation}'")
         
-        with open(outputFileLocation, "w") as fileOut:
+        with GzCapableWriter(outputFileLocation) as fileOut:
             for pid, domainFeatures in self.domDict.items():
                 formattedPredictions = "\t".join(map(str, [ feature.to_list() for feature in domainFeatures ]))
                 fileOut.write(f"{pid}\t{formattedPredictions}\n")

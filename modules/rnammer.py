@@ -1,9 +1,14 @@
 #! python3
 
+import os, sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import read_gz_file, GzCapableWriter
+
 def rnammer_reformat(args):
     ongoingCounts = {}
     
-    with open(args.rnammerGff2, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+    with read_gz_file(args.rnammerGff2) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
         for line in fileIn:
             # Parse line and skip if irrelevant
             l = line.strip()

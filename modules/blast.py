@@ -3,7 +3,7 @@
 import os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import read_gz_file
+from parsing import read_gz_file, GzCapableWriter
 
 class Outfmt6Parser:
     '''
@@ -191,7 +191,7 @@ def blast_to_homologs(args):
                 reciprocalHits.append((qid, tid))
     
     # Output file
-    with open(args.outputFileName, "w") as fileOut:
+    with GzCapableWriter(args.outputFileName) as fileOut:
         for qid, tid in reciprocalHits:
             fileOut.write(f"{qid}\t{tid}\n")
     
