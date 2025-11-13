@@ -1480,7 +1480,7 @@ def gff3_to_fasta(args):
                 # Make sure we can produce each requested sequence type for this feature
                 if "exon" in args.types:
                     # Prevent sequence output if we cannot create matching exon/CDS/protein files
-                    if "CDS" in args.types or "protein" in args.types:
+                    if "cds" in args.types or "protein" in args.types:
                         if not hasattr(feature, "exon"):
                             raise ValueError(f"'{feature.ID}' cannot produce both 'exon' and 'CDS' sequences as it lacks 'exon' children")
                         if not hasattr(feature, "CDS"):
@@ -1495,7 +1495,7 @@ def gff3_to_fasta(args):
                             warnedOnce = True
                         continue
                 
-                elif "CDS" in args.types or "protein" in args.types:
+                elif "cds" in args.types or "protein" in args.types:
                     if not hasattr(feature, "CDS"): # i.e., we only want 'CDS' or 'protein' output but we can't produce it
                         if not warnedOnce:
                             print(f"WARNING: '{feature.ID}' is a '{featureType}' feature but it lacks 'CDS' children; " +
@@ -1510,7 +1510,7 @@ def gff3_to_fasta(args):
                 else:
                     exonSequence = None
                 
-                if "CDS" in args.types or "protein" in args.types:
+                if "cds" in args.types or "protein" in args.types:
                     cdsSequence = feature.as_gene_model(fasta, "CDS", variantsObj=gff3.get_variants())
                     cdsSequence.description = parentFeatureID
                     
