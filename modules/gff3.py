@@ -999,26 +999,20 @@ class GFF3Tarium:
         
         return parents
     
-    def write(self, outputFileName, typesToWrite=None, idsToWrite=None):
+    def _sorted_features(self, typesToWrite=None, idsToWrite=None):
         '''
-        Writes this GFF3 object to file. For typesToWrite, you should specify the
-        highest level feature type for each feature you are interested in, if you want
-        to avoid output duplication. For example, to output all mRNA features, you probably
-        want to specify the 'gene' parent-level feature.
+        Yields the feature IDs in sorted order; intended for use by .write() but
+        functionalised privately to allow for alternative strategies when writing
+        to file.
         
         Parameters:
-            outputFileName -- a string indicating the location to write to; overwriting is
-                              not permitted
             typesToWrite -- None to indicate that all feature types should be output, OR
                             a list of strings indicating self.type values to output.
             idsToWrite -- None to indicate that all features should be output, OR
                           a list of strings indicating feature IDs to output.
+        Yields:
+            featureID -- a string indicating the next parent feature in sorted order.
         '''
-        # Validate arguments
-        if os.path.exists(outputFileName):
-            raise FileExistsError(f"'{outputFileName}' already exists; GFF3Tarium will not .write() to here")
-        if typesToWrite != None and idsToWrite != None:
-            raise ValueError("GFF3Tarium.write() can't handle typesToWrite and idsToWrite both being set")
         
         # Get the contig order to write
         contigOrder = sorted(self.contigs)
@@ -1046,14 +1040,38 @@ class GFF3Tarium:
                         if not parentFeature.ID in found:
                             sortOrder.append((contigOrder.index(parentFeature.contig), parentFeature.start, parentFeature.ID))
                             found.add(parentFeature.ID)
+        
         sortOrder.sort(key = lambda x: (x[0], x[1]))
+        for _, _, featureID in sortOrder:
+            yield featureID
+    
+    def write(self, outputFileName, typesToWrite=None, idsToWrite=None):
+        '''
+        Writes this GFF3 object to file. For typesToWrite, you should specify the
+        highest level feature type for each feature you are interested in, if you want
+        to avoid output duplication. For example, to output all mRNA features, you probably
+        want to specify the 'gene' parent-level feature.
+        
+        Parameters:
+            outputFileName -- a string indicating the location to write to; overwriting is
+                              not permitted
+            typesToWrite -- None to indicate that all feature types should be output, OR
+                            a list of strings indicating self.type values to output.
+            idsToWrite -- None to indicate that all features should be output, OR
+                          a list of strings indicating feature IDs to output.
+        '''
+        # Validate arguments
+        if os.path.exists(outputFileName):
+            raise FileExistsError(f"'{outputFileName}' already exists; GFF3Tarium will not .write() to here")
+        if typesToWrite != None and idsToWrite != None:
+            raise ValueError("GFF3Tarium.write() can't handle typesToWrite and idsToWrite both being set")
         
         # Write ordered features to file
         with GzCapableWriter(outputFileName) as fileOut:
             haveWritten = set()
-            for _, _, featureID in sortOrder:
+            for featureID in self._sorted_features(typesToWrite, idsToWrite):
                 output = self[featureID].format(haveWritten)
-                if output: # there may theoretically be an edge case where .format() returns None; this handles it
+                if output: # .format() may return None with multiparent features; this prevents duplicate child feature writing
                     fileOut.write(output)
     
     def update_feature(self, feature, newIDPrefix, merging=False):
@@ -1339,21 +1357,44 @@ def gff3_pcr(args):
             fileOut.write(sequenceObject.format())
 
 def gff3_relabel(args):
-    # Parse list file
+    # Parse list file (if applicable)
     renameList = []
-    with read_gz_file(args.listFile) as fileIn:
-        for line in fileIn:
-            sl = line.strip("\r\n\t").split("\t")
-            if not len(sl) == 2:
-                raise ValueError(f"List file is expected to have 2 columns; malformed line is '{line.rstrip()}'")
-            renameList.append(sl)
+    if args.listFile != None:
+        with read_gz_file(args.listFile) as fileIn:
+            for line in fileIn:
+                sl = line.strip("\r\n\t").split("\t")
+                if not len(sl) == 2:
+                    raise ValueError(f"List file is expected to have 2 columns; malformed line is '{line.rstrip()}'")
+                renameList.append(sl)    
     
-    # Iterate over GFF3 lines and produce output
-    with read_gz_file(args.gff3File) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
-        for line in fileIn:
-            for original, new in renameList:
-                line = line.replace(original, new)
-            fileOut.write(line)
+    # Parse GFF3 with NCLS indexing
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Iterate over features, make edits where necessary, and write modified output
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        haveWritten = set()
+        for featureID in gff3._sorted_features(): # give None defaults to output all feature IDs
+            feature = gff3[featureID]
+            
+            # Apply contig suffix
+            if args.contigSuffix != None:
+                feature.contig += args.contigSuffix
+                for childFeature in feature.find_all_children():
+                    childFeature.contig += args.contigSuffix
+            
+            # Apply gene suffix
+            if args.geneSuffix != None:
+                newGeneID = feature.ID + args.geneSuffix
+                gff3.update_feature(feature, newGeneID)
+            
+            # Produce output line
+            line = feature.format(haveWritten)
+            if line: # .format() may return None with multiparent features; this prevents duplicate child feature writing
+                # Apply naive line substitutions
+                for original, new in renameList:
+                    line = line.replace(original, new)
+                
+                fileOut.write(line)
 
 def gff3_filter(args):
     # Parse list file (if applicable)

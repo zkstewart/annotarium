@@ -287,13 +287,21 @@ def main():
     grelabelparser.add_argument("-i", dest="gff3File",
                                 required=True,
                                 help="Location of GFF3 file")
-    grelabelparser.add_argument("-l", dest="listFile",
-                                required=True,
-                                help="""Location of 2-column headerless list with oldid:newid
-                                values for substitution""")
     grelabelparser.add_argument("-o", dest="outputFileName",
                                 required=True,
                                 help="Location to write modified GFF3")
+    grelabelparser.add_argument("--list", dest="listFile",
+                                required=False,
+                                help="""Optionally, specify the location of a 2-column headerless
+                                list with oldid:newid values for naive in-place line replacement""")
+    grelabelparser.add_argument("--csuffix", dest="contigSuffix",
+                                required=False,
+                                help="""Optionally, specify a suffix to add to every contig e.g.,
+                                if you have renamed the underlying genomic sequences""")
+    grelabelparser.add_argument("--gsuffix", dest="geneSuffix",
+                                required=False,
+                                help="""Optionally, specify a suffix to add to every gene e.g.,
+                                if you want to merge haplotype-resolved annotations together""")
     
     # GFF3 > filter mode
     gfilterparser = subGFF3Parsers.add_parser("filter",

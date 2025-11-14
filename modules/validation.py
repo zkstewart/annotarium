@@ -227,10 +227,25 @@ def validate_g_relabel(args):
     '''
     Validation for arguments used in "gff3 relabel" mode.
     '''
+    # Validate that an argument was set which gives us something to do
+    if args.listFile == None and args.contigSuffix == None and args.geneSuffix == None:
+        raise ValueError("At least one of --list and/or --csuffix and/or --gsuffix must be set")
+    
+    # Validate that suffix doesn't break GFF3 formatting
+    if args.contigSuffix != None:
+        if "\t" in args.contigSuffix:
+            raise ValueError("Tab characters cannot be used with --csuffix")
+    if args.geneSuffix != None:
+        if "\t" in args.geneSuffix:
+            raise ValueError("Tab characters cannot be used with --gsuffix")
+        if ";" in args.geneSuffix:
+            raise ValueError("Semicolon characters cannot be used with --gsuffix")
+    
     # Validate list file
-    args.listFile = os.path.abspath(args.listFile)
-    if not os.path.isfile(args.listFile):
-        raise FileNotFoundError(f"List file (-l {args.listFile}) does not exist!")
+    if args.listFile != None:
+        args.listFile = os.path.abspath(args.listFile)
+        if not os.path.isfile(args.listFile):
+            raise FileNotFoundError(f"List file (--list {args.listFile}) does not exist!")
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)
