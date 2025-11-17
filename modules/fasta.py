@@ -443,3 +443,22 @@ def fasta_explode(args):
     for record in fasta:
         with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
             fileOut.write(record.format())
+
+def fasta_rename(args):
+    subs = [ substitutionStr.split(":") for substitutionStr in args.substitution ]
+    fasta = FASTATarium(args.fastaFile)
+    ongoingCount = 0
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            ongoingCount += 1
+            newSeqID = record.id
+            
+            # Apply substitutions
+            for old, new in subs:
+                newSeqID = newSeqID.replace(old, new)
+            
+            # Apply format string
+            if args.formatString != "":
+                newSeqID = args.formatString.format(seqid=newSeqID, i=ongoingCount)
+            
+            fileOut.write(f">{newSeqID}\n{str(record)}\n")

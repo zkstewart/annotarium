@@ -11,7 +11,7 @@ import os, argparse, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_b, validate_b_to, validate_b_to_homologs, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
+    validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, validate_f_rename, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
@@ -20,7 +20,7 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_homologs
     validate_irf
 from modules.blast import blast_to_homologs
 from modules.domains import domains_resolve
-from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
+from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode, fasta_rename
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3, \
     gff3_mp_reformat, gff3_mp_resolve
@@ -169,6 +169,42 @@ def main():
     subFASTAParsers = fparser.add_subparsers(dest="fastaMode",
                                              required=True)
     
+    # FASTA > explode mode
+    fexplodeparser = subFASTAParsers.add_parser("explode",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Explode FASTA into contigs")
+    fexplodeparser.add_argument("-i", dest="fastaFile",
+                                 required=True,
+                                 help="Location of FASTA file")
+    fexplodeparser.add_argument("-o", dest="outputDirectory",
+                                 required=False,
+                                 help="Directory to write contig files to")
+    
+    # FASTA > rename mode
+    frenameparser = subFASTAParsers.add_parser("rename",
+                                               parents=[p],
+                                               add_help=False,
+                                               help="Rename FASTA sequences")
+    frenameparser.add_argument("-i", dest="fastaFile",
+                               required=True,
+                               help="Location of FASTA file")
+    frenameparser.add_argument("-o", dest="outputFileName",
+                               required=False,
+                               help="Location to write modified FASTA file")
+    frenameparser.add_argument("--sub", dest="substitution",
+                               required=False,
+                               nargs="+",
+                               help="""Optional old:new pairs for simple string substitutions
+                               to apply BEFORE --format is interpreted""",
+                               default=[])
+    frenameparser.add_argument("--format", dest="formatString",
+                               required=False,
+                               help="""Format string to use with renaming; \{i\} for
+                               an interating integer; \{seqid\} for the original ID;
+                               """,
+                               default="")
+    
     # FASTA > softmask mode
     fsoftmaskparser = subFASTAParsers.add_parser("softmask",
                                                  parents=[p],
@@ -192,18 +228,6 @@ def main():
     fstatsparser.add_argument("--out", "-o", dest="outputFileName",
                               required=False,
                               help="Optionally, write statistics output to file")
-    
-    # FASTA > explode mode
-    fexplodeparser = subFASTAParsers.add_parser("explode",
-                                                parents=[p],
-                                                add_help=False,
-                                                help="Explode FASTA into contigs")
-    fexplodeparser.add_argument("-i", dest="fastaFile",
-                                 required=True,
-                                 help="Location of FASTA file")
-    fexplodeparser.add_argument("-o", dest="outputDirectory",
-                                 required=False,
-                                 help="Directory to write contig files to")
     
     # GFF3 subparser
     gparser = subparsers.add_parser("gff3",
@@ -665,6 +689,14 @@ def dmain(args):
 
 def fmain(args):
     # Split into sub-mode-specific functions
+    if args.fastaMode == "explode":
+        print("## FASTA explosion ##")
+        validate_f_explode(args)
+        fasta_explode(args)
+    if args.fastaMode == "rename":
+        print("## FASTA sequence renaming ##")
+        validate_f_rename(args)
+        fasta_rename(args)
     if args.fastaMode == "softmask":
         print("## FASTA softmask to BED tabulation ##")
         validate_f_softmask(args)
@@ -673,10 +705,6 @@ def fmain(args):
         print("## FASTA statistics ##")
         validate_f_stats(args)
         fasta_stats(args)
-    if args.fastaMode == "explode":
-        print("## FASTA explosion ##")
-        validate_f_explode(args)
-        fasta_explode(args)
     
     print("FASTA handling complete!")
 

@@ -166,6 +166,37 @@ def validate_f_explode(args):
         os.mkdir(args.outputDirectory)
         print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
 
+def validate_f_rename(args):
+    '''
+    Validation for arguments used in "fasta rename" mode.
+    '''
+    ACCEPTED_FORMAT = ["{seqid}", "{i}"]
+    
+    # Validate that the program has something to do
+    if args.substitution == [] and args.formatString == "":
+        raise ValueError("--sub and/or --format must be provided for 'fasta rename' to do anything")
+    
+    # Validate that substitution strings are formatted appropriately
+    for substitutionStr in args.substitution:
+        try:
+            old, new = substitutionStr.split(":")
+        except:
+            raise ValueError(f"--sub value '{substitutionStr}' must have a colon delimiter as per old:new format")
+    
+    # Validate that format string is formatted appropriately
+    if "{" in args.formatString or "}" in args.formatString:
+        testString = args.formatString
+        for formatSubstr in ACCEPTED_FORMAT:
+            testString = testString.replace(formatSubstr, "")
+        if "{" in testString or "}" in testString:
+            raise ValueError(f"--format has unrecognised format substrings; only valid ones are '{ACCEPTED_FORMAT}'")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_g(args):
     '''
     Validation for arguments common to all "gff3" mode commands.
