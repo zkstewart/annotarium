@@ -289,6 +289,27 @@ def validate_g_annotate(args):
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_g_mp(args):
+    '''
+    Validation for arguments common to all "gff3 miniprot" mode commands.
+    '''
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_g_mp_reformat(args):
+    '''
+    Validation for arguments used in "gff3 miniprot reformat" mode.
+    '''
+    pass # no specific validation needed for this mode
+
+def validate_g_mp_resolve(args):
+    '''
+    Validation for arguments used in "gff3 miniprot resolve" mode.
+    '''
+    pass # no specific validation needed for this mode
+
 def validate_g_to(args):
     '''
     Validation for arguments common to all "gff3 to" mode commands.

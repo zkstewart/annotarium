@@ -14,6 +14,7 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_homologs
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
+    validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer, \
     validate_irf
@@ -21,7 +22,8 @@ from modules.blast import blast_to_homologs
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
-    gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
+    gff3_to_fasta, gff3_to_tsv, gff3_to_gff3, \
+    gff3_mp_reformat, gff3_mp_resolve
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
@@ -360,6 +362,40 @@ def main():
                                  required=True,
                                  help="Location to write modified GFF3 output")
     
+    # GFF3 > miniprot subparser
+    gff3mpparser = subGFF3Parsers.add_parser("miniprot",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Miniprot GFF3 handling")
+    gff3mpparser.set_defaults(func=gmain)
+    
+    subGFF3MpParsers = gff3mpparser.add_subparsers(dest="gff3MiniprotMode",
+                                                   required=True)
+    
+    # GFF3 > miniprot > reformat mode
+    gmpreformatparser = subGFF3MpParsers.add_parser("reformat",
+                                                    parents=[p],
+                                                    add_help=False,
+                                                    help="Add gene and exon features")
+    gmpreformatparser.add_argument("-i", dest="gff3File",
+                                   required=True,
+                                   help="Location of miniprot GFF3 file")
+    gmpreformatparser.add_argument("-o", dest="outputFileName",
+                                   required=True,
+                                   help="Location to write reformatted miniprot GFF3 file")
+    
+    # GFF3 > miniprot > resolve mode
+    gmpresolveparser = subGFF3MpParsers.add_parser("resolve",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Resolve overlapping miniprot annotations; also reformats")
+    gmpresolveparser.add_argument("-i", dest="gff3File",
+                                  required=True,
+                                  help="Location of miniprot GFF3 file")
+    gmpresolveparser.add_argument("-o", dest="outputFileName",
+                                  required=True,
+                                  help="Location to write overlap-resolved miniprot GFF3 file")
+    
     # GFF3 > to subparser
     gff3toparser = subGFF3Parsers.add_parser("to",
                                              parents=[p],
@@ -670,6 +706,18 @@ def gmain(args):
         print("## GFF3 relabelling ##")
         validate_g_relabel(args)
         gff3_relabel(args)
+    
+    if args.gff3Mode == "miniprot":
+        validate_g_mp(args)
+        if args.gff3MiniprotMode == "reformat":
+            print("## Reformat miniprot into a proper GFF3 ##")
+            validate_g_mp_reformat(args)
+            gff3_mp_reformat(args)
+        if args.gff3MiniprotMode == "resolve":
+            print("## Resolve overlapping miniprot annotations ##")
+            validate_g_mp_resolve(args)
+            gff3_mp_resolve(args)
+    
     if args.gff3Mode == "to":
         validate_g_to(args)
         if args.gff3ToMode == "fasta":

@@ -939,17 +939,23 @@ class GFF3Tarium:
     @property
     def parents(self):
         '''
-        Iterates through this GFF3Tarium object to yield all features that are
+        Iterates through this GFF3Tarium object to returns all features that are
         at the parent level. Beginning with self.parentFtypes, a set which
         only contains ftypes with at least one parent-level feature, we loop
-        through all features under those ftype(s) and yield features which
+        through all features under those ftype(s) and return features which
         lack any parents.
+        
+        Note that we do not yield as a generator since many calling functions expect
+        to be able to iterate through .parents and make modifications to the same
+        features being iterated over.
         '''
+        features = []
         for ftype in sorted(self.parentFtypes):
             for featureID in self.ftypes[ftype]:
                 feature = self[featureID]
                 if len(feature.parents) == 0: # we don't trust the GFF3 file to have an ftype ALWAYS be a parent or a child
-                    yield feature
+                    features.append(feature)
+        return features
     
     @property
     def artifacts(self):
@@ -1109,6 +1115,7 @@ class GFF3Tarium:
         self.ftypes[feature.ftype].append(feature.ID) # add the feature ID into the ftypes iterable
         
         # Recursively update children
+        ftypeCount = {}
         for i, child in enumerate(feature.children):
             if merging: # i.e., this is a feature coming from another GFF3Tarium object
                 child.parents = set([newID]) # remove previous object's parents
@@ -1118,7 +1125,10 @@ class GFF3Tarium:
             if newID == previousID:
                 self.update_feature(child, child.ID, merging) # maintain the child's ID if the parent needed no changes
             else:
-                self.update_feature(child, f"{newID}.{child.ftype}{i+1}", merging) # propagate the new ID system to downstream children
+                ftypeCount.setdefault(child.ftype, 0)
+                ftypeCount[child.ftype] += 1
+                
+                self.update_feature(child, f"{newID}.{child.ftype}{ftypeCount[child.ftype]}", merging) # propagate the new ID system to downstream children
     
     def merge_gff3(self, otherGff3, isoPct=0.3, dupePct=0.6):
         '''
@@ -1503,6 +1513,105 @@ def gff3_annotate(args):
     
     # Write to file
     gff3.write(args.outputFileName)
+
+def _reformat_miniprot(gff3, identifiers, parentFeature):
+    '''
+    Helper function for updating a miniprot GFF3 annotation to have full
+    GFF3 fields (i.e., a 'gene' parent and 'exon' children). Functionalised
+    for reuse in different gff3_mp_* functions.
+    
+    Parameters:
+        gff3 -- a GFF3Tarium object, parsed from the miniprot GFF3 file
+        identifiers -- a dictionary maintained by the caller which tracks the
+                       number of times we've encountered a particular 'Target'
+                       feature (which was then used as the base for our newID)
+        parentFeature -- the miniprot mRNA feature which we want to tack 'gene'
+                         and 'exon' features onto.
+    Returns:
+        newGeneParent -- a GFF3Feature of the new 'gene' parent under which the
+                         (now renamed) parentFeature resides (and its associated
+                         exon children)
+    '''
+    # Get a new gene ID
+    originalID, _start, _end = parentFeature.attributes["Target"].split(" ")
+    identifiers.setdefault(originalID, 0)
+    identifiers[originalID] += 1
+    newID = f"{originalID}.mp.gene{identifiers[originalID]}"
+    
+    # Create new gene parent feature
+    newGeneParent = GFF3Feature("tempminiprot", "gene", start=parentFeature.start, end=parentFeature.end,
+                                strand=parentFeature.strand, contig=parentFeature.contig,
+                                source=parentFeature.source, score=parentFeature.score,
+                                frame=parentFeature.frame, attributes=parentFeature.attributes,
+                                children=[parentFeature])
+    parentFeature.parents = set([newID])
+    gff3.update_feature(newGeneParent, newID, merging=False)
+    
+    # Add exon features
+    for cdsFeature in parentFeature.CDS:
+        idPrefix, idSuffix = cdsFeature.ID.rsplit(".", maxsplit=1)
+        newExonID = f"{idPrefix}.exon{idSuffix[3:]}"
+        newExonFeature = GFF3Feature(newExonID, "exon", start=cdsFeature.start, end=cdsFeature.end,
+                                     strand=cdsFeature.strand, contig=cdsFeature.contig,
+                                     source=cdsFeature.source, score=cdsFeature.score,
+                                     frame=cdsFeature.frame, attributes=cdsFeature.attributes,
+                                     parents=cdsFeature.parents)
+        parentFeature.add_child(newExonFeature)
+    
+    # Merge gene parent feature into GFF3
+    gff3.update_feature(newGeneParent, newID, merging=True)
+    
+    return newGeneParent
+
+def gff3_mp_reformat(args):
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    identifiers = {}
+    for parentFeature in gff3.parents:
+        _reformat_miniprot(gff3, identifiers, parentFeature) # the returned geneFeature is unneeeded
+    
+    gff3.write(args.outputFileName)
+
+def gff3_mp_resolve(args):
+    # Parse GFF3 with NCLS indexing
+    gff3 = GFF3Tarium(args.gff3File)
+    gff3.create_ncls_index(typeToIndex=list(gff3.parentFtypes))
+    
+    # Get list of parent features ordered from best (identity > length) to worst
+    orderedParents = sorted(
+        [
+            (parentFeature.ID, float(parentFeature.attributes["Identity"]), parentFeature.length("CDS"))
+            for parentFeature in gff3.parents
+        ], key = lambda x: (-x[1], -x[2])
+    )
+    
+    # Resolve overlaps
+    toWrite = []
+    handled = set()
+    identifiers = {}
+    for parentID, identity, length in orderedParents:
+        parentFeature = gff3[parentID]
+        
+        # Skip if this has been handled
+        if parentID in handled:
+            continue
+        
+        # Reformat this miniprot mRNA
+        newGeneParent = _reformat_miniprot(gff3, identifiers, parentFeature)
+        
+        # Note this feature for writing to file
+        toWrite.append(newGeneParent.ID) # we don't write the features that end up in the handled set
+        
+        # Note any overlaps as being handled
+        overlaps = gff3.ncls_finder(parentFeature.start, parentFeature.end, "contig", parentFeature.contig)
+        handled.update([
+            o.ID
+            for o in overlaps
+            if o.strand == newGeneParent.strand
+        ])
+    
+    # Write ordered output to file
+    gff3.write(args.outputFileName, idsToWrite=toWrite)
 
 def gff3_to_fasta(args):
     fasta = FASTATarium(args.fastaFile)
