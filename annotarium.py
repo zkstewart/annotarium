@@ -9,7 +9,7 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_b, validate_b_to, validate_b_to_homologs, \
+from modules.validation import validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, validate_f_rename, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
@@ -18,7 +18,7 @@ from modules.validation import validate_b, validate_b_to, validate_b_to_homologs
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer, \
     validate_irf
-from modules.blast import blast_to_homologs
+from modules.blast import blast_filter, blast_to_homologs
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode, fasta_rename
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
@@ -87,6 +87,34 @@ def main():
     
     subBlastParsers = bparser.add_subparsers(dest="blastMode",
                                              required=True)
+    
+    # Blast > filter mode
+    bfilterparser = subBlastParsers.add_parser("filter",
+                                               parents=[p],
+                                               add_help=False,
+                                               help="Resolve overlapping domain predictions")
+    bfilterparser.add_argument("-i", dest="outfmt6File",
+                               required=True,
+                               help="Location of BLAST outfmt6-style file")
+    bfilterparser.add_argument("-o", dest="outputFileName",
+                               required=False,
+                               help="Write filtered outfmt6-style file to this location")
+    bfilterparser.add_argument("--maxhits", dest="maxhits",
+                               required=False,
+                               type=int,
+                               help="Optionally filter to maximally this many hits per query",
+                               default=None)
+    bfilterparser.add_argument("--evalue", dest="evalue",
+                               required=False,
+                               type=float,
+                               help="Optionally ignore hits with worse than this evalue",
+                               default=None)
+    bfilterparser.add_argument("--id", dest="identity",
+                               required=False,
+                               type=float,
+                               help="""Optionally ignore hits with worse than this identity;
+                               give values as a ratio from 0 to 1""",
+                               default=None)
     
     # Blast > to subparser
     btoparser = subBlastParsers.add_parser("to",
@@ -669,6 +697,10 @@ def main():
 
 def bmain(args):
     # Split into sub-mode-specific functions
+    if args.blastMode == "filter":
+        print("## Blast results filtration ##")
+        validate_b_filter(args)
+        blast_filter(args)
     if args.blastMode == "to":
         validate_b_to(args)
         if args.blastToMode == "homologs":

@@ -69,6 +69,47 @@ def validate_b(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_b_filter(args):
+    '''
+    Validation for arguments used in "blast filter" mode.
+    '''
+    # Validate numeric arguments
+    if args.maxhits != None:
+        if args.maxhits < 1:
+            raise ValueError("--maxhits must be >= 1")
+    if args.evalue != None:
+        if args.evalue < 0:
+            raise ValueError("--evalue cannot be negative")
+    if args.identity != None:
+        if args.identity < 0:
+            raise ValueError("--id must be a ratio >= 0")
+        if args.identity > 1:
+            raise ValueError("--id must be a ratio <= 1")
+
+def validate_b_to(args):
+    '''
+    Validation for arguments common to all "blast to" mode commands.
+    '''
+    pass # no specific validation needed for this mode
+
+def validate_b_to_homologs(args):
+    '''
+    Validation for arguments used in "blast to homologs" mode.
+    '''
+    # Validate outfmt6 files
+    args.inputFile1 = os.path.abspath(args.inputFile1)
+    if not os.path.isfile(args.inputFile1):
+        raise FileNotFoundError(f"outfmt6 file (-i1 {args.inputFile1}) does not exist!")
+    
+    args.inputFile2 = os.path.abspath(args.inputFile2)
+    if not os.path.isfile(args.inputFile2):
+        raise FileNotFoundError(f"outfmt6 file (-i2 {args.inputFile2}) does not exist!")
+    
+    # Validate numeric arguments
+    if args.evalue != None:
+        if args.evalue < 0:
+            raise ValueError("--evalue must >= 0")
+
 def validate_d(args):
     '''
     Validation for arguments common to all "domains" mode commands.
@@ -97,30 +138,6 @@ def validate_d_resolve(args):
         raise ValueError("--overlapPercent must >= 0")
     if args.overlapCutoff > 1:
         raise ValueError("--overlapPercent must <= 1")
-
-def validate_b_to(args):
-    '''
-    Validation for arguments common to all "blast to" mode commands.
-    '''
-    pass # no specific validation needed for this mode
-
-def validate_b_to_homologs(args):
-    '''
-    Validation for arguments used in "blast to homologs" mode.
-    '''
-    # Validate outfmt6 files
-    args.inputFile1 = os.path.abspath(args.inputFile1)
-    if not os.path.isfile(args.inputFile1):
-        raise FileNotFoundError(f"outfmt6 file (-i1 {args.inputFile1}) does not exist!")
-    
-    args.inputFile2 = os.path.abspath(args.inputFile2)
-    if not os.path.isfile(args.inputFile2):
-        raise FileNotFoundError(f"outfmt6 file (-i2 {args.inputFile2}) does not exist!")
-    
-    # Validate numeric arguments
-    if args.evalue != None:
-        if args.evalue < 0:
-            raise ValueError("--evalue must >= 0")
 
 def validate_f(args):
     '''
