@@ -430,7 +430,7 @@ def cluster_reformat(args):
             with read_gz_file(fastaFile) as fileIn:
                 for line in fileIn:
                     if line.startswith(">"):
-                        seqID = line.strip().split(" ")[0]
+                        seqID = line[1:].strip().split(" ")[0]
                         retainIfContains.add(seqID)
     
     # Load and reformat the clustering result
