@@ -3,6 +3,9 @@ import os, re
 class DirectoryNotFoundError(Exception):
     pass
 
+class FormatError(Exception):
+    pass
+
 def parse_regions(regions):
     '''
     Returns:
@@ -109,6 +112,41 @@ def validate_b_to_homologs(args):
     if args.evalue != None:
         if args.evalue < 0:
             raise ValueError("--evalue must >= 0")
+
+def validate_c(args):
+    '''
+    Validation for arguments common to all "cluster" mode commands.
+    '''
+    # Validate cluster file
+    args.clusterFile = os.path.abspath(args.clusterFile)
+    if not os.path.isfile(args.clusterFile):
+        raise FileNotFoundError(f"Clusters file (-i {args.clusterFile}) does not exist!")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_c_reformat(args):
+    '''
+    Validation for arguments used by "cluster reformat" mode.
+    '''
+    INCOMPATIBLE_CONVERSIONS = ["binge", "cdhit"]
+    # Validate output format compatibility
+    if args.outputFileFormat in INCOMPATIBLE_CONVERSIONS:
+        if args.inputFileFormat != args.outputFileFormat:
+            raise FormatError(f"Can only produce '-of {args.outputFileFormat}' when -if is the same format")
+    
+    # Validate optional input files
+    if args.listFile != None:
+        args.listFile = os.path.abspath(args.listFile)
+        if not os.path.isfile(args.listFile):
+            raise FileExistsError(f"--list file '{args.listFile}' is not a file or does not exist")
+    if args.fastaFile != None:
+        args.fastaFile = os.path.abspath(args.fastaFile)
+        if not os.path.isfile(args.fastaFile):
+            raise FileExistsError(f"--fasta file '{args.fastaFile}' is not a file or does not exist")
 
 def validate_d(args):
     '''
