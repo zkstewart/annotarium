@@ -418,16 +418,16 @@ class ClusteringResult:
 
 def cluster_reformat(args):
     # Parse in filtering files
-    shouldFilter = args.listFile != None or args.fastaFile != None
+    shouldFilter = args.listFiles != [] or args.fastaFiles != []
     if shouldFilter:
         retainIfContains = set()
-        if args.listFile != None:
-            with read_gz_file(args.listFile) as fileIn:
+        for listFile in args.listFiles:
+            with read_gz_file(listFile) as fileIn:
                 for line in fileIn:
                     l = line.strip()
                     retainIfContains.add(l)
-        if args.fastaFile != None:
-            with read_gz_file(args.listFile) as fileIn:
+        for fastaFile in args.fastaFiles:
+            with read_gz_file(fastaFile) as fileIn:
                 for line in fileIn:
                     if line.startswith(">"):
                         seqID = line.strip().split(" ")[0]

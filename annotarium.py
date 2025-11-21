@@ -179,16 +179,18 @@ def main():
                                  choices=["binge", "cdhit", "corset", "mmseqs", "pantools", "2columnleft", "2columnright"],
                                  help="""File format to write outputs to; note that certain formats e.g., 'binge' can only
                                  be produced if the input format was also 'binge'""")
-    creformatparser.add_argument("--fasta", dest="fastaFile",
+    creformatparser.add_argument("--fasta", dest="fastaFiles",
                                  required=False,
+                                 nargs="+",
                                  help="""Optionally, filter down to clusters that contain a
-                                 sequence in this FASTA file""",
-                                 default=None)
-    creformatparser.add_argument("--list", dest="listFile",
+                                 sequence in one or more FASTA files""",
+                                 default=[])
+    creformatparser.add_argument("--list", dest="listFiles",
                                  required=False,
+                                 nargs="+",
                                  help="""Optionally, filter down to clusters that contain a
-                                 sequence listed in this 1-column file""",
-                                 default=None)
+                                 sequence listed in one or more 1-column text files""",
+                                 default=[])
     
     # Domains subparser
     dparser = subparsers.add_parser("domains",

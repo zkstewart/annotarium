@@ -139,14 +139,16 @@ def validate_c_reformat(args):
             raise FormatError(f"Can only produce '-of {args.outputFileFormat}' when -if is the same format")
     
     # Validate optional input files
-    if args.listFile != None:
-        args.listFile = os.path.abspath(args.listFile)
-        if not os.path.isfile(args.listFile):
-            raise FileExistsError(f"--list file '{args.listFile}' is not a file or does not exist")
-    if args.fastaFile != None:
-        args.fastaFile = os.path.abspath(args.fastaFile)
-        if not os.path.isfile(args.fastaFile):
-            raise FileExistsError(f"--fasta file '{args.fastaFile}' is not a file or does not exist")
+    if args.listFiles != []:
+        for i, listFile in enumerate(args.listFiles):
+            args.listFiles[i] = os.path.abspath(listFile)
+            if not os.path.isfile(args.listFiles[i]):
+                raise FileExistsError(f"--list file '{args.listFiles[i]}' is not a file or does not exist")
+    if args.fastaFiles != []:
+        for i, fastaFile in enumerate(args.fastaFiles):
+            args.fastaFiles[i] = os.path.abspath(fastaFile)
+            if not os.path.isfile(args.fastaFiles[i]):
+                raise FileExistsError(f"--fasta file '{args.fastaFiles[i]}' is not a file or does not exist")
 
 def validate_d(args):
     '''
