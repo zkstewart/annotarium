@@ -274,8 +274,8 @@ def main():
                                default=[])
     frenameparser.add_argument("--format", dest="formatString",
                                required=False,
-                               help="""Format string to use with renaming; \{i\} for
-                               an interating integer; \{seqid\} for the original ID;
+                               help="""Format string to use with renaming; {i} for
+                               an iterating integer; {seqid} for the original ID;
                                """,
                                default="")
     

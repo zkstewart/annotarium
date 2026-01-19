@@ -571,6 +571,8 @@ class GFF3Tarium:
         "exon": "mRNA",
         "mRNA": "gene",
         "lnc_RNA": "gene",
+        "five_prime_UTR": "mRNA", # UTRs should be associated with mRNA parents
+        "three_prime_UTR": "mRNA",
         "Product": "gene" # Product is a special case, but we treat it as a gene parent
         # "gene": None  # Gene is the top-level feature, no parent should be inferred
     }
