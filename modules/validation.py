@@ -343,6 +343,40 @@ def validate_g_pcr(args):
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_g_rc(args):
+    '''
+    Validation for arguments used in "gff3 rc" mode.
+    '''
+    # Validate FASTA file
+    args.fastaFile = os.path.abspath(args.fastaFile)
+    if not os.path.isfile(args.fastaFile):
+        raise FileNotFoundError(f"FASTA file (-f {args.fastaFile}) does not exist!")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    
+    # Validate sequence IDs and/or files
+    if args.sequences != []:
+        args.toRC = []
+        for value in args.sequences:
+            if not os.path.isfile(value):
+                args.toRC.append(value)
+            else:
+                args.toRC.extend(parse_list_file(value))
+    
+        origLength = len(args.toRC)
+        args.toRC = set(args.toRC)
+        newLength = len(args.toRC)
+        if origLength != newLength:
+            print("# WARNING: Duplicate sequence IDs found within values or files given to --seqs; " +
+                f"originally parsed {origLength} IDs but deduplication gives {newLength} IDs; " +
+                "if this is potentially expected then there are no concerns.")
+    else:
+        args.toRC = True
+
 def validate_g_relabel(args):
     '''
     Validation for arguments used in "gff3 relabel" mode.

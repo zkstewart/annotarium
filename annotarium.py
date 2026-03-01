@@ -13,7 +13,8 @@ from modules.validation import validate_b, validate_b_filter, validate_b_to, val
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, validate_f_rename, validate_f_rc, \
-    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
+    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
+        validate_g_pcr, validate_g_relabel, validate_g_rc, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
@@ -23,7 +24,7 @@ from modules.blast import blast_filter, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode, fasta_rename, fasta_rc
-from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
+from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, gff3_rc, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3, \
     gff3_mp_reformat, gff3_mp_resolve
 from modules.homologs import homologs_annotate, homologs_to_bedpe
@@ -398,6 +399,29 @@ def main():
                             required=False,
                             type=int,
                             help="Optionally obtain the provided length of surrounding sequence")
+    
+    # GFF3 > rc mode
+    grcparser = subGFF3Parsers.add_parser("rc",
+                                          parents=[p],
+                                          add_help=False,
+                                          help="Reverse complement GFF3 annotation(s)")
+    grcparser.add_argument("-i", dest="gff3File",
+                           required=True,
+                           help="Location of GFF3 file")
+    grcparser.add_argument("-f", dest="fastaFile",
+                           required=True,
+                           help="Location of FASTA (e.g., genome) file")
+    grcparser.add_argument("-o", dest="outputFileName",
+                           required=False,
+                           help="Location to write modified FASTA file")
+    grcparser.add_argument("--seqs", dest="sequences",
+                           required=False,
+                           nargs="+",
+                           help="""Optionally, specify one or more contig IDs to reverse complement annotations and/or
+                           one or more files listing contig IDs. All unspecified contigs will be left as-is;
+                           by default if you do not specify any arguments here, annotations on
+                           ALL contigs will be reverse complemented""",
+                           default=[])
     
     # GFF3 > relabel mode
     grelabelparser = subGFF3Parsers.add_parser("relabel",
@@ -845,6 +869,10 @@ def gmain(args):
         print("## GFF3 PCR model ##")
         validate_g_pcr(args)
         gff3_pcr(args)
+    if args.gff3Mode == "rc":
+        print("## GFF3 reverse complementation ##")
+        validate_g_rc(args) # sets args.toRC as a set (of IDs to RC) or as True (ALL IDs are to be RC'd)
+        gff3_rc(args)
     if args.gff3Mode == "relabel":
         print("## GFF3 relabelling ##")
         validate_g_relabel(args)

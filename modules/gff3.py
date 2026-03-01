@@ -4,6 +4,7 @@ import os, re, sys
 import pandas as pd
 from ncls import NCLS
 from collections import Counter
+from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file, write_conditionally, parse_annotation_table, GzCapableWriter
@@ -287,7 +288,7 @@ class GFF3Feature:
         data this GFF3Feature contains. Several assumptions are made which, if you
         haven't done anything truly weird, will hold true.
         
-        alreadyFound should always be empty for the parent-level feature
+        alreadyFound should always be an empty set for the parent-level feature
         
         Parameters:
             alreadyFound -- a set maintained by the calling function which tracks
@@ -307,6 +308,47 @@ class GFF3Feature:
         for child in self.children:
             child.format(alreadyFound, recursion)
         return "\n".join(recursion) + "\n"
+    
+    def reverse_this(self, contigLength):
+        '''
+        This method simply reverses the annotation described by this GFF3Feature object
+        according to the contig in its reverse complementation.
+        '''
+        self.strand = "+" if self.strand == "-" \
+                      else "-" if self.strand == "+" \
+                      else self.strand # don't change if unknown strand
+        
+        start, end = self.start, self.end
+        self.start = contigLength - end + 1
+        self.end = contigLength - start + 1
+    
+    def reverse_all(self, contigLength, alreadyFound):
+        '''
+        This method will recursively apply the .reverse() method to ALL features indexed
+        under the parent feature, with protections similar to .format() to try to prevent
+        issues with multiparent features.
+        
+        alreadyFound should always be an empty set for the parent-level feature
+        
+        Parameters:
+            contigLength -- an integer of the length of the genomic contig this feature
+                            is annotated upon.
+            alreadyFound -- a set maintained by the calling function which tracks
+                            feature .ID values that have already been found/formatted.
+                            Necessary to accommodate multiparent features and prevent
+                            duplicate outputs.
+        '''
+        # Recursion management
+        if self.ID in alreadyFound:
+            return
+        alreadyFound.add(self.ID)
+        
+        # Reverse feature details
+        self.reverse_this(contigLength)
+        
+        # Recurse into children
+        for child in self.children:
+            child.reverse_all(contigLength, alreadyFound)
     
     def as_sequence(self, fastaObj, variantsObj=None):
         '''
@@ -1367,6 +1409,22 @@ def gff3_pcr(args):
     with GzCapableWriter(args.outputFileName) as fileOut:
         for sequenceObject in sequenceObjects:
             fileOut.write(sequenceObject.format())
+
+def gff3_rc(args):
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Parse genome for contig lengths
+    with read_gz_file(args.fastaFile) as fileIn:
+        genomeRecords = SeqIO.parse(fileIn, "fasta")
+        lengthsDict = { record.id:len(record) for record in genomeRecords }
+    
+    # Reverse complement all relevant features
+    for key, feature in gff3.features.items():
+        if args.toRC == True or feature.contig in args.toRC:
+            feature.reverse_this(lengthsDict[feature.contig])
+    
+    # Write modified output
+    gff3.write(args.outputFileName)
 
 def gff3_relabel(args):
     # Parse list file (if applicable)
