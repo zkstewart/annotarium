@@ -98,3 +98,17 @@ def parse_annotation_table(fileName, delimiter="\t"):
                           " this and similar gene lines will have '.' values imputed for all columns")
                     alreadyWarned = True
             yield dataDict
+
+def parse_list_file(fileName):
+    '''
+    Returns:
+        listedValues -- a list where each value is the string content of a line within
+                        the provided file which has had .strip() applied to it.
+    '''
+    listedValues = []
+    with read_gz_file(fileName) as fileIn:
+        for line in fileIn:
+            l = line.strip()
+            if l != "":
+                listedValues.append(l)
+    return listedValues

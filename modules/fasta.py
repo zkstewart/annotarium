@@ -444,6 +444,20 @@ def fasta_explode(args):
         with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
             fileOut.write(record.format())
 
+def fasta_rc(args):
+    '''
+    Parameters:
+        args.toRC -- a set containing sequence ID strings to indicate specific sequences to reverse
+                     complement, OR the Boolean True to indicate that ALL IDs are to be reverse
+                     complemented.
+    '''
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            if args.toRC == True or record.id in args.toRC:
+                record = record.reverse_complement()
+            fileOut.write(record.format())
+
 def fasta_rename(args):
     subs = [ substitutionStr.split(":") for substitutionStr in args.substitution ]
     fasta = FASTATarium(args.fastaFile)

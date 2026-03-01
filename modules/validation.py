@@ -1,4 +1,7 @@
-import os, re
+import os, re, sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import parse_list_file
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -222,6 +225,35 @@ def validate_f_explode(args):
                                           "first or specify a different output location"))
         os.mkdir(args.outputDirectory)
         print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
+
+def validate_f_rc(args):
+    '''
+    Validation for arguments used in "fasta rc" mode.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    
+    # Validate sequence IDs and/or files
+    if args.sequences != []:
+        args.toRC = []
+        for value in args.sequences:
+            if not os.path.isfile(value):
+                args.toRC.append(value)
+            else:
+                args.toRC.extend(parse_list_file(value))
+    
+        origLength = len(args.toRC)
+        args.toRC = set(args.toRC)
+        newLength = len(args.toRC)
+        if origLength != newLength:
+            print("# WARNING: Duplicate sequence IDs found within values or files given to --seqs; " +
+                f"originally parsed {origLength} IDs but deduplication gives {newLength} IDs; " +
+                "if this is potentially expected then there are no concerns.")
+    else:
+        args.toRC = True
 
 def validate_f_rename(args):
     '''

@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, validate_f_rename, \
+    validate_f, validate_f_softmask, validate_f_stats, validate_f_explode, validate_f_rename, validate_f_rc, \
     validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, validate_g_pcr, validate_g_relabel, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
@@ -22,7 +22,7 @@ from modules.validation import validate_b, validate_b_filter, validate_b_to, val
 from modules.blast import blast_filter, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode, fasta_rename
+from modules.fasta import fasta_softmask_to_bed, fasta_stats, fasta_explode, fasta_rename, fasta_rc
 from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3, \
     gff3_mp_reformat, gff3_mp_resolve
@@ -254,6 +254,26 @@ def main():
     fexplodeparser.add_argument("-o", dest="outputDirectory",
                                  required=False,
                                  help="Directory to write contig files to")
+    
+    # FASTA > rc mode
+    frcparser = subFASTAParsers.add_parser("rc",
+                                           parents=[p],
+                                           add_help=False,
+                                           help="Reverse complement FASTA sequence(s)")
+    frcparser.add_argument("-i", dest="fastaFile",
+                           required=True,
+                           help="Location of FASTA file")
+    frcparser.add_argument("-o", dest="outputFileName",
+                           required=False,
+                           help="Location to write modified FASTA file")
+    frcparser.add_argument("--seqs", dest="sequences",
+                           required=False,
+                           nargs="+",
+                           help="""Optionally, specify one or more sequence IDs to reverse complement and/or
+                           one or more files listing sequence IDs. All unspecified contigs will be left as-is;
+                           by default if you do not specify any arguments here,
+                           ALL contigs will be reverse complemented""",
+                           default=[])
     
     # FASTA > rename mode
     frenameparser = subFASTAParsers.add_parser("rename",
@@ -784,6 +804,10 @@ def fmain(args):
         print("## FASTA explosion ##")
         validate_f_explode(args)
         fasta_explode(args)
+    if args.fastaMode == "rc":
+        print("## FASTA reverse complementation ##")
+        validate_f_rc(args) # sets args.toRC as a set (of IDs to RC) or as True (ALL IDs are to be RC'd)
+        fasta_rc(args)
     if args.fastaMode == "rename":
         print("## FASTA sequence renaming ##")
         validate_f_rename(args)
