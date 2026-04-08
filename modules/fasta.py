@@ -356,6 +356,37 @@ class FASTATarium:
             len(self.records)
         )
 
+def fasta_gaps_to_bed(args):
+    '''
+    Note that BED format is officially specified to have the start position
+    be 0-based and inclusive (i.e., 0 is the first nucleotide) whereas the
+    end position is 1-based and non-inclusive. In other words, it behaves
+    like python range() such that [0:10] would include the first 10 nucleotides
+    numered as: 0, 1, 2, 3, 4, 5, 6, 7, 8, and 9 (but not including 10 which
+    would actually be the 11th nucleotide).
+    '''
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            seq = str(record)
+            
+            # Iterate over sequence nucleotides to demarcate 'N' gap regions
+            gapCoords = []
+            lastWasUngapped = True
+            for i, nucleotide in enumerate(seq):
+                if nucleotide.upper() != "N":
+                    lastWasUngapped = True
+                else:
+                    if lastWasUngapped:
+                        gapCoords.append([i, None])
+                    
+                    gapCoords[-1][1] = i+1
+                    lastWasUngapped = False
+            
+            # Write to file
+            for start, end in gapCoords:
+                fileOut.write(f"{record.id}\t{start}\t{end}\n")
+
 def fasta_softmask_to_bed(args):
     '''
     Note that BED format is officially specified to have the start position
