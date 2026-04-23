@@ -95,10 +95,13 @@ def main():
     bfilterparser = subBlastParsers.add_parser("filter",
                                                parents=[p],
                                                add_help=False,
-                                               help="Resolve overlapping domain predictions")
+                                               help="Filter a sorted .outfmt6 file")
     bfilterparser.add_argument("-i", dest="outfmt6File",
                                required=True,
-                               help="Location of BLAST outfmt6-style file")
+                               help="""Location of BLAST outfmt6-style file; file must be sorted
+                               such that query results occur as a contiguous block, within which
+                               results are sorted from most to least significant. This is default
+                               behaviour for BLAST.""")
     bfilterparser.add_argument("-o", dest="outputFileName",
                                required=False,
                                help="Write filtered outfmt6-style file to this location")

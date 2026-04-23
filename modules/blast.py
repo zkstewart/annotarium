@@ -189,9 +189,9 @@ class SearchResult:
 class NotParsedError(Exception):
     pass
 
-class Outfmt6Parser:
+class Outfmt6:
     '''
-    The BlastParser Class provides parsing capability for outfmt6 files, regardless
+    The Outfmt6 Class provides parsing capability for outfmt6 files, regardless
     of whether they were made by BLAST, MMSeqs2, or otherwise.
     
     Initialisation:
@@ -207,10 +207,10 @@ class Outfmt6Parser:
         self.evalue = evalue
         self.numHits = numHits
         self.identity = identity
-        self.results = None
+        self.resultsDict = None
         
         # Also set helper attribute
-        self.isOutfmt6Parser = True
+        self.isOutfmt6 = True
     
     @property
     def fileLocation(self):
@@ -282,20 +282,20 @@ class Outfmt6Parser:
         self._identity = value
     
     @property
-    def results(self):
-        if self._results == None:
-            raise NotParsedError("Outfmt6Parser .results is None; call .parse() first!")
-        return self._results
+    def resultsDict(self):
+        if self._resultsDict == None:
+            raise NotParsedError("Outfmt6 .resultsDict is None; call .parse_to_dict() first!")
+        return self._resultsDict
     
-    @results.setter
-    def results(self, value):
+    @resultsDict.setter
+    def resultsDict(self, value):
         if value is None:
-            self._results = None
+            self._resultsDict = None
             return
         
         if not isinstance(value, dict):
-            raise TypeError(f"results must be a 'dict', not '{type(value).__name__}'")
-        self._results = value
+            raise TypeError(f"resultsDict must be a 'dict', not '{type(value).__name__}'")
+        self._resultsDict = value
     
     @identity.setter
     def identity(self, value):
@@ -313,24 +313,51 @@ class Outfmt6Parser:
         
         self._identity = value
     
-    def parse(self, indexQuery=True, indexTarget=False):
+    @staticmethod
+    def parse_line(line):
+        '''
+        Takes a standard outfmt6 line and interprets this into a SearchResult object.
+        '''
+        qid, tid, identity, length, mismatch, gapopen, qstart, qend, \
+            tstart, tend, evalue, bitscore = line.rstrip("\r\n").split("\t")
+        
+        # Adjust identity to be a 0->1 ratio
+        "Should be safe to assume a real 0->100 result file will never return an identity of less than 1 percent"
+        identity = float(identity)
+        if identity > 1:
+            identity = identity/100
+        
+        # Return as object
+        sresult = SearchResult(
+            queryID=qid, targetID=tid,
+            identity=identity, alignedLength=int(length),
+            mismatch=int(mismatch), gapopen=int(gapopen),
+            queryStart=int(qstart), queryEnd=int(qend),
+            targetStart=int(tstart), targetEnd=int(tend),
+            evalue=float(evalue), score=float(bitscore)
+        )
+        return sresult
+    
+    def parse_to_dict(self, indexQuery=True, indexTarget=False):
         '''
         Parses the given self.fileLocation outfmt6 file according to self.evalue
         and self.numHits. Requires one or both of indexQuery and/or indexTarget to be
         True. Results will be flawed if identical sequence IDs exist in both index and
-        target files and both are indexed.
+        target files and both are indexed. Stores the file contents into a dictionary
+        representation that is memory-heavy but capable of complicated behavioural
+        handling.
         
         Parameters:
             indexQuery -- (OPTIONAL) store results by query ID in the underlying dict
             indexTarget -- (OPTIONAL) store results by target ID in the underlying dict
         Sets:
-            self.results -- a dict with structure like:
-                                query_id1: [
-                                    [target_id, identity_pct, query_start, query_end, target_start, target_end, evalue],
+            self.resultsDict -- a dict with structure like:
+                                    query_id1: [
+                                        [target_id, identity_pct, query_start, query_end, target_start, target_end, evalue],
+                                        ...
+                                    ],
+                                    query_id2: [ ... ],
                                     ...
-                                ],
-                                query_id2: [ ... ],
-                                ...
         '''
         if (not indexQuery) and (not indexTarget):
             raise ValueError("Cannot parse Outfmt6 unless one or both of indexQuery and indexTarget are set")
@@ -339,45 +366,21 @@ class Outfmt6Parser:
         
         with read_gz_file(self.fileLocation) as fileIn:
             for line in fileIn:
-                # Extract details
-                qid, tid, identity, length, mismatch, gapopen, qstart, qend, \
-                    tstart, tend, evalue, bitscore = line.rstrip("\r\n").split("\t")
-                
-                identity, evalue, bitscore = float(identity), float(evalue), float(bitscore)
-                length, mismatch, gapopen, qstart, qend, tstart, tend = \
-                    int(length), int(mismatch), int(gapopen), int(qstart), int(qend), int(tstart), int(tend)
+                sresult = Outfmt6.parse_line(line)
                 
                 # Skip based on filtration values
-                if self.evalue != None and evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
+                if self.evalue != None and sresult.evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
                     continue
-                if self.identity != None and identity < self.identity:
+                if self.identity != None and sresult.identity < self.identity:
                     continue
                 
                 # Store result
                 if indexQuery:
                     blastDict.setdefault(qid, [])
-                    blastDict[qid].append(
-                        SearchResult(
-                            queryID=qid, targetID=tid,
-                            identity=identity, alignedLength=length,
-                            mismatch=mismatch, gapopen=gapopen,
-                            queryStart=qstart, queryEnd=qend,
-                            targetStart=tstart, targetEnd=tend,
-                            evalue=evalue, score=bitscore
-                        )
-                    )
+                    blastDict[qid].append(sresult)
                 if indexTarget:
                     blastDict.setdefault(tid, [])
-                    blastDict[tid].append(
-                        SearchResult(
-                            queryID=qid, targetID=tid,
-                            identity=identity, alignedLength=length,
-                            mismatch=mismatch, gapopen=gapopen,
-                            queryStart=qstart, queryEnd=qend,
-                            targetStart=tstart, targetEnd=tend,
-                            evalue=evalue, score=bitscore
-                        )
-                    )
+                    blastDict[tid].append(sresult)
         
         # Sort individual entries in blastDict
         for value in blastDict.values():
@@ -388,61 +391,101 @@ class Outfmt6Parser:
             for key in blastDict.keys():
                 blastDict[key] = blastDict[key][0:self.numHits]
         
-        self.results = blastDict
+        self.resultsDict = blastDict
+    
+    def parse_sorted_to_output(self, outputFileName):
+        '''
+        Parses the given self.fileLocation outfmt6 file according to self.evalue
+        and self.numHits. As opposed to .parse_to_dict(), this function will not
+        retain data in memory and seeks to stream data in and produce a filtered
+        output file immediately.
+        
+        As implied by the function name, this process requires the file to be
+        sorted in order to be able to apply e.g., the numHits filter without
+        storing data in memory first.
+        
+        Parameters:
+            indexQuery -- (OPTIONAL) store results by query ID in the underlying dict
+            indexTarget -- (OPTIONAL) store results by target ID in the underlying dict
+        Sets:
+            self.resultsDict -- a dict with structure like:
+                                    query_id1: [
+                                        [target_id, identity_pct, query_start, query_end, target_start, target_end, evalue],
+                                        ...
+                                    ],
+                                    query_id2: [ ... ],
+                                    ...
+        '''
+        thisSeq = [None, 0]
+        with read_gz_file(self.fileLocation) as fileIn, GzCapableWriter(outputFileName) as fileOut:
+            for line in fileIn:
+                sresult = Outfmt6.parse_line(line)
+                
+                # Skip based on alignment quality values
+                if self.evalue != None and sresult.evalue > self.evalue: # self.evalue might differ between BLAST run and parsing
+                    continue
+                if self.identity != None and sresult.identity < self.identity:
+                    continue
+                
+                # Skip based on numHits
+                if self.numHits != None:
+                    if thisSeq[0] != sresult.queryID:
+                        thisSeq = [sresult.queryID, 0]
+                    elif thisSeq[1] >= self.numHits:
+                        continue
+                    thisSeq[1] += 1
+                
+                # Write output if no previous filtrations resulted in a 'continue'
+                fileOut.write(line)
     
     def keys(self):
-        return self.results.keys()
+        return self.resultsDict.keys()
     
     def items(self):
-        return self.results.items()
+        return self.resultsDict.items()
     
     def __iter__(self):
-        return self.results.items()
+        return self.resultsDict.items()
     
     def __len__(self):
-        return len(self.results)
+        return len(self.resultsDict)
     
     def __getitem__(self, key):
-        if key in self.results:
-            return self.results[key]
+        if key in self.resultsDict:
+            return self.resultsDict[key]
     
     def __contains__(self, value):
-        return True if value in self.results else False
+        return True if value in self.resultsDict else False
     
     def __str__(self):
-        return (f"Outfmt6Parser parsed '{self.fileLocation}' with evalue={self.evalue} cutoff and " + 
+        return (f"Outfmt6 parsed '{self.fileLocation}' with evalue={self.evalue} cutoff and " + 
                f"max. {self.numHits} hits returned per query; for {len(self)} keys there are " + 
                "{0} hits".format(
-                   sum([ len(v) for v in self.results.values() ])
+                   sum([ len(v) for v in self.resultsDict.values() ])
                ))
     
     def __repr__(self):
-        return "<Outfmt6Parser object; fileLocation='{0}', evalue={1}, numHits={2}>".format(
+        return "<Outfmt6 object; fileLocation='{0}', evalue={1}, numHits={2}>".format(
             self.fileLocation, self.evalue, self.numHits
         )
 
 def blast_filter(args):
-    results = Outfmt6Parser(args.outfmt6File, evalue=args.evalue, numHits=args.maxhits, identity=args.identity)
-    results.parse()
-    
-    with GzCapableWriter(args.outputFileName) as fileOut:
-        for qid, searchResultList in results.items():
-            for searchResult in searchResultList:
-                fileOut.write(searchResult.to_outfmt6() + "\n")
+    outfmt6 = Outfmt6(args.outfmt6File, evalue=args.evalue, numHits=args.maxhits, identity=args.identity)
+    outfmt6.parse_sorted_to_output(args.outputFileName)
 
 def blast_to_homologs(args):
     # Parse files 1 and 2
-    results1 = Outfmt6Parser(args.inputFile1, evalue=args.evalue, numHits=1)
-    results1.parse()
-    results2 = Outfmt6Parser(args.inputFile2, evalue=args.evalue, numHits=1)
-    results2.parse()
+    outfmt6_1 = Outfmt6(args.inputFile1, evalue=args.evalue, numHits=1)
+    outfmt6_1.parse_to_dict()
+    outfmt6_2 = Outfmt6(args.inputFile2, evalue=args.evalue, numHits=1)
+    outfmt6_2.parse_to_dict()
     
     # Check for reciprocity
     reciprocalHits = []
-    for qid, searchResultList in results1.items():
+    for qid, searchResultList in outfmt6_1.items():
         tid = searchResultList[0].targetID
-        if tid in results2:
-            tidMatch = results2[tid][0].targetID # the tid of the tid should be the qid if files are reciprocal
+        if tid in outfmt6_2:
+            tidMatch = outfmt6_2[tid][0].targetID # the tid of the tid should be the qid if files are reciprocal
             if tidMatch == qid:
                 reciprocalHits.append((qid, tid))
     
