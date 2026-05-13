@@ -1,15 +1,28 @@
-#! python3
-# annotarium.py
-# Front-end interface for GFF3-handling tools
-# that have been developed over several years in the
-# Genome_analysis_scripts and Various_scripts Z.K.S
-# repository, but which need to be consolidated and
-# made more user-friendly.
+#!/usr/bin/env python3
+
+# annotarium.py provides an interace to several tools intended to
+# work with gene annotations in GFF3 or FASTA or any other relevant file format
+# Copyright (C) 2026 Zachary Kenneth Stewart
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.validation import validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
+from modules.validation import validate_ap, \
+    validate_at, validate_at_tx2gene, \
+    validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_gaps, validate_f_stats, validate_f_explode, validate_f_rename, validate_f_rc, \
@@ -17,9 +30,10 @@ from modules.validation import validate_b, validate_b_filter, validate_b_to, val
         validate_g_pcr, validate_g_relabel, validate_g_rc, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
+    validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
-    validate_rnammer, \
-    validate_irf
+    validate_rnammer
+from modules.annotable import annotable_tx2gene
 from modules.blast import blast_filter, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -54,14 +68,14 @@ def main():
                                                 required=True)
     
     # Apollo subparser
-    aparser = subparsers.add_parser("apollo",
-                                    parents=[p],
-                                    add_help=False,
-                                    help="Apollo file handling")
-    aparser.set_defaults(func=fmain)
+    apparser = subparsers.add_parser("apollo",
+                                     parents=[p],
+                                     add_help=False,
+                                     help="Apollo file handling")
+    apparser.set_defaults(func=apmain)
     
-    subApolloParsers = aparser.add_subparsers(dest="apolloMode",
-                                              required=True)
+    subApolloParsers = apparser.add_subparsers(dest="apolloMode",
+                                               required=True)
     
     # Apollo > rename mode
     arenameparser = subApolloParsers.add_parser("rename",
@@ -80,6 +94,31 @@ def main():
                                                   parents=[p],
                                                   add_help=False,
                                                   help="Automatically integrate Apollo GFF3 into existing GFF3")
+    
+    # Annotable subparser
+    atparser = subparsers.add_parser("annotable",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="Annotation table (annotable) handling")
+    atparser.set_defaults(func=atmain)
+    
+    subAnnotableParsers = atparser.add_subparsers(dest="annotableMode",
+                                                  required=True)
+    
+    # Annotable > tx2gene mode
+    attx2gparser = subAnnotableParsers.add_parser("tx2gene",
+                                                  parents=[p],
+                                                  add_help=False,
+                                                  help="Collapse annotable from transcript (mRNA) to gene-level")
+    attx2gparser.add_argument("-i", dest="annotableFile",
+                              required=True,
+                              help="Location of annotable file")
+    attx2gparser.add_argument("-g", dest="gff3File",
+                              required=True,
+                              help="Location of GFF3 enabling relation of mRNAs to their genes")
+    attx2gparser.add_argument("-o", dest="outputFileName",
+                              required=False,
+                              help="Write modified annotable file to this location")
     
     # Blast subparser
     bparser = subparsers.add_parser("blast",
@@ -767,6 +806,14 @@ def main():
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
+    if args.mode == "apollo":
+        print("## annotarium.py - Apollo file handling ##")
+        validate_ap(args)
+        apmain(args)
+    if args.mode == "annotable":
+        print("## annotarium.py - Annotation table handling ##")
+        validate_at(args)
+        atmain(args)
     if args.mode == "blast":
         print("## annotarium.py - BLAST handling ##")
         validate_b(args)
@@ -802,6 +849,31 @@ def main():
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
+
+def apmain(args):
+    # Split into sub-mode-specific functions
+    if args.apolloMode == "rename":
+        print("## Apollo annotation renaming ##")
+        raise NotImplementedError("'apollo rename' not yet functional, sorry!")
+        #validate_ap_rename(args)
+        #apollo_rename(args)
+    if args.apolloMode == "update":
+        print("## Genome annotation from apollo artifacts ##")
+        raise NotImplementedError("'apollo update' not yet functional, sorry!")
+        #validate_ap_update(args)
+        #apollo_update(args)
+    if args.apolloMode == "pipeline":
+        print("## Integrate apollo annotations into existing GFF3 ##")
+        raise NotImplementedError("'apollo pipeline' not yet functional, sorry!")
+        #validate_ap_pipeline(args)
+        #apollo_pipeline(args)
+
+def atmain(args):
+    # Split into sub-mode-specific functions
+    if args.annotableMode == "tx2gene":
+        print("## Annotable transcript -> gene collapse ##")
+        validate_at_tx2gene(args)
+        annotable_tx2gene(args)
 
 def bmain(args):
     # Split into sub-mode-specific functions

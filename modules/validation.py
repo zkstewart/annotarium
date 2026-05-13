@@ -65,6 +65,36 @@ def parse_annotate(columnAttributeDelimiter):
         annotateValues.append([column, attribute, delimiter if delimiter != "" else None])
     return annotateValues
 
+def validate_ap(args):
+    '''
+    Validation for arguments common to all "apollo" mode commands.
+    '''
+    pass # not yet implemented
+
+def validate_at(args):
+    '''
+    Validation for arguments common to all "annotable" mode commands.
+    '''
+    # Validate annotable file
+    args.annotable = os.path.abspath(args.annotableFile)
+    if not os.path.isfile(args.annotableFile):
+        raise FileNotFoundError(f"Annotable file (-i {args.annotableFile}) does not exist!")
+    
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_at_tx2gene(args):
+    '''
+    Validation for arguments used in "annotable tx2gene" mode.
+    '''
+    # Validate GFF3 file
+    args.gff3File = os.path.abspath(args.gff3File)
+    if not os.path.isfile(args.gff3File):
+        raise FileNotFoundError(f"GFF3 file (-g {args.gff3File}) does not exist!")
+
 def validate_b(args):
     '''
     Validation for arguments common to all "blast" mode commands.
