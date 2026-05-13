@@ -376,11 +376,11 @@ class Outfmt6:
                 
                 # Store result
                 if indexQuery:
-                    blastDict.setdefault(qid, [])
-                    blastDict[qid].append(sresult)
+                    blastDict.setdefault(sresult.queryID, [])
+                    blastDict[sresult.queryID].append(sresult)
                 if indexTarget:
-                    blastDict.setdefault(tid, [])
-                    blastDict[tid].append(sresult)
+                    blastDict.setdefault(sresult.targetID, [])
+                    blastDict[sresult.targetID].append(sresult)
         
         # Sort individual entries in blastDict
         for value in blastDict.values():
