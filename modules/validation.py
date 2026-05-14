@@ -86,6 +86,16 @@ def validate_at(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_at_goseq(args):
+    '''
+    Validation for arguments used in "annotable goseq" mode.
+    '''
+    # Validate behavioural optionals
+    if args.columnHeader == "":
+        raise ValueError(f"--col must be given a non-empty value")
+    if args.nullCharacter == "":
+        raise ValueError(f"--null must be given a non-empty value")
+
 def validate_at_tx2gene(args):
     '''
     Validation for arguments used in "annotable tx2gene" mode.

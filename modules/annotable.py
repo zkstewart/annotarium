@@ -139,3 +139,18 @@ def annotable_tx2gene(args):
     
     # Write to file
     annotable.write(args.outputFileName)
+
+def annotable_goseq(args):
+    # Parse annotable
+    annotable = Annotable(args.annotableFile)
+    if not args.columnHeader in annotable.df:
+        raise KeyError(f"--col value '{args.columnHeader}' is not a header in -i '{args.annotableFile}' ; " + 
+                       f"available columns are {annotable.df.columns.to_list()}")
+    
+    # Extract the column and reset nulls
+    gos = annotable.df[args.columnHeader]
+    gos.replace(".", args.nullCharacter, inplace=True)
+    
+    # Write to file
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        gos.to_csv(fileOut, sep="\t", header=False)

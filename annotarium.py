@@ -21,7 +21,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
-    validate_at, validate_at_tx2gene, \
+    validate_at, validate_at_goseq, validate_at_tx2gene, \
     validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
@@ -33,7 +33,7 @@ from modules.validation import validate_ap, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
-from modules.annotable import annotable_tx2gene
+from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -104,6 +104,28 @@ def main():
     
     subAnnotableParsers = atparser.add_subparsers(dest="annotableMode",
                                                   required=True)
+    
+    # Annotable > goseq mode
+    atgoseqparser = subAnnotableParsers.add_parser("goseq",
+                                                   parents=[p],
+                                                   add_help=False,
+                                                   help="Extract GO terms from annotable")
+    atgoseqparser.add_argument("-i", dest="annotableFile",
+                               required=True,
+                               help="Location of annotable file")
+    atgoseqparser.add_argument("-o", dest="outputFileName",
+                               required=False,
+                               help="Write modified annotable file to this location")
+    atgoseqparser.add_argument("--col", dest="columnHeader",
+                               required=False,
+                               help="""Optionally, specify the column header containing GO terms;
+                               default == 'Best_mapped_GOs_+_parents'""",
+                               default="Best_mapped_GOs_+_parents")
+    atgoseqparser.add_argument("--null", dest="nullCharacter",
+                               required=False,
+                               help="""Optionally, specify the character that should indicate nulls
+                               i.e., no GO terms; default == '0'""",
+                               default="0")
     
     # Annotable > tx2gene mode
     attx2gparser = subAnnotableParsers.add_parser("tx2gene",
@@ -870,6 +892,10 @@ def apmain(args):
 
 def atmain(args):
     # Split into sub-mode-specific functions
+    if args.annotableMode == "goseq":
+        print("## Annotable GO term extraction ##")
+        validate_at_goseq(args)
+        annotable_goseq(args)
     if args.annotableMode == "tx2gene":
         print("## Annotable transcript -> gene collapse ##")
         validate_at_tx2gene(args)
