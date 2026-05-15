@@ -4,6 +4,7 @@ import os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file, GzCapableWriter
+from gff3tarium import GFF3Feature, GFF3Tarium
 
 class SearchResult:
     '''
@@ -472,6 +473,42 @@ class Outfmt6:
 def blast_filter(args):
     outfmt6 = Outfmt6(args.outfmt6File, evalue=args.evalue, numHits=args.maxhits, identity=args.identity)
     outfmt6.parse_sorted_to_output(args.outputFileName)
+
+def blast_tx2gene(args):
+    # Parse BLAST file
+    outfmt6 = Outfmt6(args.outfmt6File)
+    outfmt6.parse_to_dict()
+    
+    # Parse GFF3
+    gff3 = GFF3Tarium(args.gff3File)
+    
+    # Extract tx2gene and gene2tx out of GFF3
+    tx2gene = {}
+    gene2tx = {}
+    for geneID in gff3.ftypes["gene"]:
+        geneFeature = gff3[geneID]
+        if hasattr(geneFeature, "mRNA"):
+            gene2tx.setdefault(geneID, set())
+            for mrnaFeature in geneFeature.mRNA:
+                tx2gene[mrnaFeature.ID] = geneFeature.ID
+                gene2tx[geneID].add(mrnaFeature.ID)
+    
+    # Create a modified resultsDict with tx2gene process applied
+    resultsDict = {}
+    for txID, searchResultList in outfmt6.resultsDict.items():
+        geneID = tx2gene[txID]
+        resultsDict.setdefault(geneID, [])
+        
+        for sresult in searchResultList:
+            sresult.queryID = geneID
+        resultsDict[geneID].extend(searchResultList)
+    
+    # Write modified output to file
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for geneID, searchResultList in resultsDict.items():
+            searchResultList.sort(key = lambda x: -x.score) # sort the list by optimised score
+            for sresult in searchResultList:
+                fileOut.write(str(sresult) + "\n")
 
 def blast_to_homologs(args):
     # Parse files 1 and 2

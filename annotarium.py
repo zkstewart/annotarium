@@ -22,7 +22,7 @@ import os, argparse, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
     validate_at, validate_at_goseq, validate_at_tx2gene, \
-    validate_b, validate_b_filter, validate_b_to, validate_b_to_homologs, \
+    validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_gaps, validate_f_stats, validate_f_explode, validate_f_rename, validate_f_rc, \
@@ -34,7 +34,7 @@ from modules.validation import validate_ap, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
 from modules.annotable import annotable_goseq, annotable_tx2gene
-from modules.blast import blast_filter, blast_to_homologs
+from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_gaps_to_bed, fasta_stats, fasta_explode, fasta_rename, fasta_rc
@@ -182,6 +182,24 @@ def main():
                                help="""Optionally ignore hits with worse than this identity;
                                give values as a ratio from 0 to 1""",
                                default=None)
+    
+    # Blast > tx2gene mode
+    btx2gparser = subBlastParsers.add_parser("tx2gene",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Collapse BLAST results from transcript (mRNA) to gene-level")
+    btx2gparser.add_argument("-i", dest="outfmt6File",
+                             required=True,
+                             help="""Location of BLAST outfmt6-style file; file must be sorted
+                             such that query results occur as a contiguous block, within which
+                             results are sorted from most to least significant. This is default
+                             behaviour for BLAST.""")
+    btx2gparser.add_argument("-g", dest="gff3File",
+                             required=True,
+                             help="Location of GFF3 enabling relation of mRNAs to their genes")
+    btx2gparser.add_argument("-o", dest="outputFileName",
+                             required=False,
+                             help="Write modified outfmt6-style file to this location")
     
     # Blast > to subparser
     btoparser = subBlastParsers.add_parser("to",
@@ -921,6 +939,10 @@ def bmain(args):
         print("## Blast results filtration ##")
         validate_b_filter(args)
         blast_filter(args)
+    if args.blastMode == "tx2gene":
+        print("## Blast transcript -> gene collapse ##")
+        validate_b_tx2gene(args)
+        blast_tx2gene(args)
     if args.blastMode == "to":
         validate_b_to(args)
         if args.blastToMode == "homologs":

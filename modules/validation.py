@@ -132,6 +132,15 @@ def validate_b_filter(args):
         if args.identity > 1:
             raise ValueError("--id must be a ratio <= 1")
 
+def validate_b_tx2gene(args):
+    '''
+    Validation for arguments used in "blast tx2gene" mode.
+    '''
+    # Validate GFF3 file
+    args.gff3File = os.path.abspath(args.gff3File)
+    if not os.path.isfile(args.gff3File):
+        raise FileNotFoundError(f"GFF3 file (-g {args.gff3File}) does not exist!")
+
 def validate_b_to(args):
     '''
     Validation for arguments common to all "blast to" mode commands.
