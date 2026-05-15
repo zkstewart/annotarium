@@ -176,7 +176,7 @@ class SearchResult:
             outfmt6Str -- a string (without newline termination) in outfmt6 format.
         '''
         return (f"{self.queryID}\t{self.targetID}\t{self.identity}\t{self.alignedLength}\t" + 
-                f"{self.mismatch}\t{self.gapopen}{self.queryStart}\t{self.queryEnd}\t" + 
+                f"{self.mismatch}\t{self.gapopen}\t{self.queryStart}\t{self.queryEnd}\t" + 
                 f"{self.targetStart}\t{self.targetEnd}\t{self.evalue}\t{self.score}")
     
     def __str__(self):
