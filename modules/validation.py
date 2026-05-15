@@ -1,7 +1,7 @@
 import os, re, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import parse_list_file
+from parsing import parse_list_file, read_gz_file
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -316,11 +316,24 @@ def validate_f_rename(args):
         raise ValueError("--sub and/or --format must be provided for 'fasta rename' to do anything")
     
     # Validate that substitution strings are formatted appropriately
-    for substitutionStr in args.substitution:
-        try:
-            old, new = substitutionStr.split(":")
-        except:
-            raise ValueError(f"--sub value '{substitutionStr}' must have a colon delimiter as per old:new format")
+    parsedSubstitutions = []
+    for substitution in args.substitution:
+        if os.path.isfile(substitution):
+            with read_gz_file(substitution) as fileIn:
+                for line in fileIn:
+                    l = line.rstrip()
+                    if l != "": # tolerate an empty line at the e.g., end of the file
+                        sl = l.split("\t")
+                        if len(sl) != 2:
+                            raise ValueError(f"--sub file '{substitution}' must be tab-delimited with two columns per old:new format")
+                        parsedSubstitutions.append(":".join(sl))
+        else:
+            try:
+                old, new = substitution.split(":")
+                parsedSubstitutions.append(substitution)
+            except:
+                raise ValueError(f"--sub value '{substitution}' must have a colon delimiter as per old:new format")
+    args.substitution = parsedSubstitutions
     
     # Validate that format string is formatted appropriately
     if "{" in args.formatString or "}" in args.formatString:

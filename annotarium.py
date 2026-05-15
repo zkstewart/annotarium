@@ -354,8 +354,10 @@ def main():
     frenameparser.add_argument("--sub", dest="substitution",
                                required=False,
                                nargs="+",
-                               help="""Optional old:new pairs for simple string substitutions
-                               to apply BEFORE --format is interpreted""",
+                               help="""Optionally provide one or more old:new pairs through the
+                               command-line, OR a TSV file with old\tnew format. Enacts a simple
+                               sed-like string substitution that is applied BEFORE --format
+                               is interpreted""",
                                default=[])
     frenameparser.add_argument("--format", dest="formatString",
                                required=False,
