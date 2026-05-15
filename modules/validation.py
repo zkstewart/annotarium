@@ -345,6 +345,15 @@ def validate_g(args):
     if not os.path.isfile(args.gff3File):
         raise FileNotFoundError(f"GFF3 file (-i {args.gff3File}) does not exist!")
 
+def validate_g_sort(args):
+    '''
+    Validation for arguments used in "gff3 sort" mode.
+    '''
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_g_stats(args):
     '''
     Validation for arguments used in "gff3 stats" mode.

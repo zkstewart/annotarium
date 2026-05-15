@@ -26,8 +26,8 @@ from modules.validation import validate_ap, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_softmask, validate_f_gaps, validate_f_stats, validate_f_explode, validate_f_rename, validate_f_rc, \
-    validate_g, validate_g_stats, validate_g_merge, validate_g_filter, validate_g_annotate, \
-        validate_g_pcr, validate_g_relabel, validate_g_rc, \
+    validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
+        validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_irf, \
@@ -38,9 +38,9 @@ from modules.blast import blast_filter, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
 from modules.fasta import fasta_softmask_to_bed, fasta_gaps_to_bed, fasta_stats, fasta_explode, fasta_rename, fasta_rc
-from modules.gff3 import gff3_stats, gff3_merge, gff3_filter, gff3_annotate, gff3_pcr, gff3_relabel, gff3_rc, \
-    gff3_to_fasta, gff3_to_tsv, gff3_to_gff3, \
-    gff3_mp_reformat, gff3_mp_resolve
+from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
+    gff3_mp_reformat, gff3_mp_resolve, \
+    gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.rnammer import rnammer_reformat
@@ -409,17 +409,62 @@ def main():
     subGFF3Parsers = gparser.add_subparsers(dest="gff3Mode",
                                             required=True)
     
-    # GFF3 > stats mode
-    gstatsparser = subGFF3Parsers.add_parser("stats",
-                                             parents=[p],
-                                             add_help=False,
-                                             help="Report GFF3 statistics")
-    gstatsparser.add_argument("-i", dest="gff3File",
-                              required=True,
-                              help="Location of GFF3 file")
-    gstatsparser.add_argument("-o", dest="outputFileName",
-                              required=True,
-                              help="Location to write statistics output")
+    # GFF3 > annotate mode
+    gannotateparser = subGFF3Parsers.add_parser("annotate",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Annotate attributes into a GFF3 file")
+    gannotateparser.add_argument("-i", dest="gff3File",
+                                 required=True,
+                                 help="Location of GFF3 file")
+    gannotateparser.add_argument("-t", dest="tableFile",
+                                 required=True,
+                                 help="Location of table file")
+    gannotateparser.add_argument("-c", dest="columnAttributeDelimiter",
+                                 required=True,
+                                 nargs="+",
+                                 help="""Specify one or more 'tableColumn:attributeKey:delimiter' trios, where
+                                 the -t column will be mapped as a GFF3 attribute with 'attributeKey=value'
+                                 format. The delimiter will determine whether multiple values exist in the table
+                                 column and to only return the first, or if you leave it blank like
+                                 'gene_name:Name:' then no splitting will occur and the entire tableColumn
+                                 value will be used as-is.""")
+    gannotateparser.add_argument("-o", dest="outputFileName",
+                                 required=True,
+                                 help="Location to write modified GFF3 output")
+    
+    # GFF3 > filter mode
+    gfilterparser = subGFF3Parsers.add_parser("filter",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="Filter GFF3 file")
+    gfilterparser.add_argument("-i", dest="gff3File",
+                               required=True,
+                               help="Location of GFF3 file")
+    gfilterparser.add_argument("-r", dest="retrieveOrRemove",
+                               required=True,
+                               choices=["retrieve", "remove"],
+                               help="Specify whether selected regions are retrieved or removed")
+    gfilterparser.add_argument("-o", dest="outputFileName",
+                               required=True,
+                               help="Location to write filtered GFF3 output")
+    gfilterparser.add_argument("--regions", dest="regions",
+                               required=False,
+                               nargs="+",
+                               help="""Optionally, specify one or more regions to select with
+                               contig:start-end format (e.g., 'chr1:1000000-2000000') or just
+                               with the contig alone
+                               """,
+                               default=[])
+    gfilterparser.add_argument("--list", dest="listFile",
+                               required=False,
+                               help="Optional location of a 1-column text file to parse for listed values",
+                               default=None)
+    gfilterparser.add_argument("--values", dest="values",
+                               required=False,
+                               nargs="+",
+                               help="Optionally, specify one or more values to select",
+                               default=[])
     
     # GFF3 > merge mode
     gmergeparser = subGFF3Parsers.add_parser("merge",
@@ -522,62 +567,29 @@ def main():
                                 help="""Optionally, specify a suffix to add to every gene e.g.,
                                 if you want to merge haplotype-resolved annotations together""")
     
-    # GFF3 > filter mode
-    gfilterparser = subGFF3Parsers.add_parser("filter",
-                                              parents=[p],
-                                              add_help=False,
-                                              help="Filter GFF3 file")
-    gfilterparser.add_argument("-i", dest="gff3File",
-                               required=True,
-                               help="Location of GFF3 file")
-    gfilterparser.add_argument("-r", dest="retrieveOrRemove",
-                               required=True,
-                               choices=["retrieve", "remove"],
-                               help="Specify whether selected regions are retrieved or removed")
-    gfilterparser.add_argument("-o", dest="outputFileName",
-                               required=True,
-                               help="Location to write filtered GFF3 output")
-    gfilterparser.add_argument("--regions", dest="regions",
-                               required=False,
-                               nargs="+",
-                               help="""Optionally, specify one or more regions to select with
-                               contig:start-end format (e.g., 'chr1:1000000-2000000') or just
-                               with the contig alone
-                               """,
-                               default=[])
-    gfilterparser.add_argument("--list", dest="listFile",
-                               required=False,
-                               help="Optional location of a 1-column text file to parse for listed values",
-                               default=None)
-    gfilterparser.add_argument("--values", dest="values",
-                               required=False,
-                               nargs="+",
-                               help="Optionally, specify one or more values to select",
-                               default=[])
+    # GFF3 > sort mode
+    gsortparser = subGFF3Parsers.add_parser("sort",
+                                            parents=[p],
+                                            add_help=False,
+                                            help="Sort GFF3 in simple hierarchical order")
+    gsortparser.add_argument("-i", dest="gff3File",
+                             required=True,
+                             help="Location of GFF3 file")
+    gsortparser.add_argument("-o", dest="outputFileName",
+                             required=True,
+                             help="Location to write sorted GFF3 output")
     
-    # GFF3 > annotate mode
-    gannotateparser = subGFF3Parsers.add_parser("annotate",
-                                                parents=[p],
-                                                add_help=False,
-                                                help="Annotate attributes into a GFF3 file")
-    gannotateparser.add_argument("-i", dest="gff3File",
-                                 required=True,
-                                 help="Location of GFF3 file")
-    gannotateparser.add_argument("-t", dest="tableFile",
-                                 required=True,
-                                 help="Location of table file")
-    gannotateparser.add_argument("-c", dest="columnAttributeDelimiter",
-                                 required=True,
-                                 nargs="+",
-                                 help="""Specify one or more 'tableColumn:attributeKey:delimiter' trios, where
-                                 the -t column will be mapped as a GFF3 attribute with 'attributeKey=value'
-                                 format. The delimiter will determine whether multiple values exist in the table
-                                 column and to only return the first, or if you leave it blank like
-                                 'gene_name:Name:' then no splitting will occur and the entire tableColumn
-                                 value will be used as-is.""")
-    gannotateparser.add_argument("-o", dest="outputFileName",
-                                 required=True,
-                                 help="Location to write modified GFF3 output")
+    # GFF3 > stats mode
+    gstatsparser = subGFF3Parsers.add_parser("stats",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="Report GFF3 statistics")
+    gstatsparser.add_argument("-i", dest="gff3File",
+                              required=True,
+                              help="Location of GFF3 file")
+    gstatsparser.add_argument("-o", dest="outputFileName",
+                              required=True,
+                              help="Location to write statistics output")
     
     # GFF3 > miniprot subparser
     gff3mpparser = subGFF3Parsers.add_parser("miniprot",
@@ -965,22 +977,18 @@ def fmain(args):
 
 def gmain(args):
     # Split into sub-mode-specific functions
-    if args.gff3Mode == "stats":
-        print("## GFF3 statistics ##")
-        validate_g_stats(args)
-        gff3_stats(args)
-    if args.gff3Mode == "merge":
-        print("## GFF3 merge ##")
-        validate_g_merge(args)
-        gff3_merge(args)
-    if args.gff3Mode == "filter":
-        print("## GFF3 filtering ##")
-        validate_g_filter(args) # sets args.regions
-        gff3_filter(args)
     if args.gff3Mode == "annotate":
         print("## GFF3 attribute annotation ##")
         validate_g_annotate(args) # sets args.columnAttributeDelimiter
         gff3_annotate(args)
+    if args.gff3Mode == "filter":
+        print("## GFF3 filtering ##")
+        validate_g_filter(args) # sets args.regions
+        gff3_filter(args)
+    if args.gff3Mode == "merge":
+        print("## GFF3 merge ##")
+        validate_g_merge(args)
+        gff3_merge(args)
     if args.gff3Mode == "pcr":
         print("## GFF3 PCR model ##")
         validate_g_pcr(args)
@@ -993,6 +1001,14 @@ def gmain(args):
         print("## GFF3 relabelling ##")
         validate_g_relabel(args)
         gff3_relabel(args)
+    if args.gff3Mode == "sort":
+        print("## GFF3 hierarchical sort ##")
+        validate_g_sort(args)
+        gff3_sort(args)
+    if args.gff3Mode == "stats":
+        print("## GFF3 statistics ##")
+        validate_g_stats(args)
+        gff3_stats(args)
     
     if args.gff3Mode == "miniprot":
         validate_g_mp(args)

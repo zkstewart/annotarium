@@ -279,6 +279,60 @@ def gff3_annotate(args):
     # Write to file
     gff3.write(args.outputFileName)
 
+def gff3_sort(args):
+    # Iteratively parse through file to output annotation levels hierarchically
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        found = set()
+        lineNumsWritten = set()
+        writtenThisLoop = -1
+        while writtenThisLoop != 0:
+            writtenThisLoop = 0
+            with read_gz_file(args.gff3File) as fileIn:
+                thisLineNum = 0
+                for line in fileIn:
+                    sl = line.strip("\r\n\t;'\" ").split("\t")
+                    thisLineNum += 1
+                    
+                    # Skip filler and comment lines
+                    if line.startswith("#") or len(sl) != 9:
+                        continue
+                    
+                    # Extract information from this line
+                    contig, source, ftype, start, end, \
+                        score, strand, frame, attributes = sl
+                    start = int(start)
+                    end = int(end)
+                    attributes = GFF3Tarium.format_attributes(attributes)
+                    
+                    # Get the ID attribute
+                    if not "ID" in attributes:
+                        featureID = None
+                    else:
+                        featureID = attributes["ID"]
+                    
+                    # Get the parent ID(s)
+                    if not "Parent" in attributes:
+                        parentIDs = None
+                    else:
+                        parentIDs = [ x.strip() for x in attributes["Parent"].split(",") ]
+                    
+                    # Output line if it has no parents (i.e., it is top-level)
+                    if parentIDs == None: # this check needs to consume matches that would eventually lead to a thisLineNum check
+                        if not thisLineNum in lineNumsWritten: # otherwise, we erroneously go to the next elif condition for a parentless feature
+                            fileOut.write(line)
+                            lineNumsWritten.add(thisLineNum)
+                            if featureID != None:
+                                found.add(featureID)
+                            writtenThisLoop += 1
+                    
+                    # Output line if it is at the current level (i.e., it has an immediate parent)
+                    elif any( [ pID in found for pID in parentIDs ] ) and ( not thisLineNum in lineNumsWritten ):
+                        fileOut.write(line)
+                        lineNumsWritten.add(thisLineNum)
+                        if featureID != None:
+                            found.add(featureID)
+                        writtenThisLoop += 1
+
 def _reformat_miniprot(gff3, identifiers, parentFeature):
     '''
     Helper function for updating a miniprot GFF3 annotation to have full
