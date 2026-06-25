@@ -356,6 +356,14 @@ class FASTATarium:
             len(self.records)
         )
 
+# fasta > explode
+def fasta_explode(args):
+    fasta = FASTATarium(args.fastaFile)
+    for record in fasta:
+        with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
+            fileOut.write(record.format())
+
+# fasta > gaps
 def fasta_gaps_to_bed(args):
     '''
     Note that BED format is officially specified to have the start position
@@ -387,6 +395,53 @@ def fasta_gaps_to_bed(args):
             for start, end in gapCoords:
                 fileOut.write(f"{record.id}\t{start}\t{end}\n")
 
+# fasta > lengths
+def fasta_lengths(args):
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            length = len(record)
+            if args.asList:
+                fileOut.write(f"{length}\n")
+            else:
+                fileOut.write(f"{record.id}\t{length}\n")
+
+# fasta > rc
+def fasta_rc(args):
+    '''
+    Parameters:
+        args.toRC -- a set containing sequence ID strings to indicate specific sequences to reverse
+                     complement, OR the Boolean True to indicate that ALL IDs are to be reverse
+                     complemented.
+    '''
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            if args.toRC == True or record.id in args.toRC:
+                record = record.reverse_complement()
+            fileOut.write(record.format())
+
+# fasta > rename
+def fasta_rename(args):
+    subs = [ substitutionStr.split(":") for substitutionStr in args.substitution ]
+    fasta = FASTATarium(args.fastaFile)
+    ongoingCount = 0
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            ongoingCount += 1
+            newSeqID = record.id
+            
+            # Apply substitutions
+            for old, new in subs:
+                newSeqID = newSeqID.replace(old, new)
+            
+            # Apply format string
+            if args.formatString != "":
+                newSeqID = args.formatString.format(seqid=newSeqID, i=ongoingCount)
+            
+            fileOut.write(f">{newSeqID}\n{str(record)}\n")
+
+# fasta > softmask
 def fasta_softmask_to_bed(args):
     '''
     Note that BED format is officially specified to have the start position
@@ -418,6 +473,7 @@ def fasta_softmask_to_bed(args):
             for start, end in softmaskedCoords:
                 fileOut.write(f"{record.id}\t{start}\t{end}\n")
 
+# fasta > stats
 def fasta_stats(args):
     def locale_format(value):
         return locale.format_string("%d", value, grouping=True)
@@ -468,42 +524,3 @@ def fasta_stats(args):
         statsDF.loc["#Median"] = [medianStat, None, None]
         statsDF.loc["#Mean"] = [meanStat, None, None]
         statsDF.to_csv(args.outputFileName, sep="\t")
-
-def fasta_explode(args):
-    fasta = FASTATarium(args.fastaFile)
-    for record in fasta:
-        with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
-            fileOut.write(record.format())
-
-def fasta_rc(args):
-    '''
-    Parameters:
-        args.toRC -- a set containing sequence ID strings to indicate specific sequences to reverse
-                     complement, OR the Boolean True to indicate that ALL IDs are to be reverse
-                     complemented.
-    '''
-    fasta = FASTATarium(args.fastaFile)
-    with GzCapableWriter(args.outputFileName) as fileOut:
-        for record in fasta:
-            if args.toRC == True or record.id in args.toRC:
-                record = record.reverse_complement()
-            fileOut.write(record.format())
-
-def fasta_rename(args):
-    subs = [ substitutionStr.split(":") for substitutionStr in args.substitution ]
-    fasta = FASTATarium(args.fastaFile)
-    ongoingCount = 0
-    with GzCapableWriter(args.outputFileName) as fileOut:
-        for record in fasta:
-            ongoingCount += 1
-            newSeqID = record.id
-            
-            # Apply substitutions
-            for old, new in subs:
-                newSeqID = newSeqID.replace(old, new)
-            
-            # Apply format string
-            if args.formatString != "":
-                newSeqID = args.formatString.format(seqid=newSeqID, i=ongoingCount)
-            
-            fileOut.write(f">{newSeqID}\n{str(record)}\n")

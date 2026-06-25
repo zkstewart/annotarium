@@ -240,9 +240,34 @@ def validate_f(args):
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-i {args.fastaFile}) does not exist!")
 
+def validate_f_explode(args):
+    '''
+    Validation for arguments used in "fasta explode" mode.
+    '''
+    # Validate output file name
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
+    if not os.path.exists(args.outputDirectory):
+        parentDir = os.path.dirname(args.outputDirectory)
+        if not os.path.isdir(parentDir):
+            raise DirectoryNotFoundError((f"Output directory (-o {args.outputDirectory}) cannot be created since " + 
+                                          f"its parent directory ({parentDir}) does not exist. Create this location " +
+                                          "first or specify a different output location"))
+        os.mkdir(args.outputDirectory)
+        print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
+
 def validate_f_gaps(args):
     '''
     Validation for arguments used in "fasta gaps" mode.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_f_lengths(args):
+    '''
+    Validation for arguments used in "fasta lengths" mode.
     '''
     # Validate output file name
     if args.outputFileName != None:
@@ -269,21 +294,6 @@ def validate_f_stats(args):
         args.outputFileName = os.path.abspath(args.outputFileName)
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
-
-def validate_f_explode(args):
-    '''
-    Validation for arguments used in "fasta explode" mode.
-    '''
-    # Validate output file name
-    args.outputDirectory = os.path.abspath(args.outputDirectory)
-    if not os.path.exists(args.outputDirectory):
-        parentDir = os.path.dirname(args.outputDirectory)
-        if not os.path.isdir(parentDir):
-            raise DirectoryNotFoundError((f"Output directory (-o {args.outputDirectory}) cannot be created since " + 
-                                          f"its parent directory ({parentDir}) does not exist. Create this location " +
-                                          "first or specify a different output location"))
-        os.mkdir(args.outputDirectory)
-        print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
 
 def validate_f_rc(args):
     '''
