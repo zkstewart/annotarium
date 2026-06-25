@@ -395,6 +395,16 @@ def fasta_gaps_to_bed(args):
             for start, end in gapCoords:
                 fileOut.write(f"{record.id}\t{start}\t{end}\n")
 
+# fasta > ids
+def fasta_ids(args):
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in fasta:
+            if args.asDescription:
+                fileOut.write(f"{record.description}\n")
+            else:
+                fileOut.write(f"{record.id}\n")
+
 # fasta > lengths
 def fasta_lengths(args):
     fasta = FASTATarium(args.fastaFile)

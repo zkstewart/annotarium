@@ -25,7 +25,7 @@ from modules.validation import validate_ap, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_explode, validate_f_gaps, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_softmask, validate_f_stats, \
+    validate_f, validate_f_explode, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_softmask, validate_f_stats, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -37,7 +37,7 @@ from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_explode, fasta_gaps_to_bed, fasta_lengths, fasta_rc, fasta_rename, fasta_softmask_to_bed, fasta_stats
+from modules.fasta import fasta_explode, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_softmask_to_bed, fasta_stats
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -350,11 +350,30 @@ def main():
                              required=False,
                              help="Write gap region BED output to file")
     
+    # FASTA > ids mode
+    flenparser = subFASTAParsers.add_parser("ids",
+                                            parents=[p],
+                                            add_help=False,
+                                            help="Write sequence identifiers")
+    flenparser.add_argument("-i", dest="fastaFile",
+                            required=True,
+                            help="Location of FASTA file")
+    flenparser.add_argument("-o", dest="outputFileName",
+                            required=False,
+                            help="Location to write output")
+    flenparser.add_argument("--descriptions", dest="asDescription",
+                            required=False,
+                            action="store_true",
+                            help="""Optionally write the full FASTA sequence header
+                            ('description') rather than just the ID (which is everything
+                            up to the first whitespace)""",
+                            default=False)
+    
     # FASTA > lengths mode
     flenparser = subFASTAParsers.add_parser("lengths",
                                             parents=[p],
                                             add_help=False,
-                                            help="Explode FASTA into contigs")
+                                            help="Write sequence lengths as TSV or list")
     flenparser.add_argument("-i", dest="fastaFile",
                             required=True,
                             help="Location of FASTA file")
@@ -999,6 +1018,10 @@ def fmain(args):
         print("## FASTA gaps to BED tabulation ##")
         validate_f_gaps(args)
         fasta_gaps_to_bed(args)
+    if args.fastaMode == "ids":
+        print("## FASTA identifiers ##")
+        validate_f_ids(args)
+        fasta_ids(args)
     if args.fastaMode == "lengths":
         print("## FASTA lengths ##")
         validate_f_lengths(args)

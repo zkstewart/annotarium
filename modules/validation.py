@@ -265,6 +265,16 @@ def validate_f_gaps(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_f_ids(args):
+    '''
+    Validation for arguments used in "fasta ids" mode.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_f_lengths(args):
     '''
     Validation for arguments used in "fasta lengths" mode.
