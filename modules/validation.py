@@ -1,54 +1,14 @@
 import os, re, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import parse_list_file, read_gz_file
+from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, \
+    parse_gff3_regions, parse_fasta_regions
 
 class DirectoryNotFoundError(Exception):
     pass
 
 class FormatError(Exception):
     pass
-
-def parse_regions(regions):
-    '''
-    Returns:
-        parsedRegions -- a list of dictionaries with structure like:
-                         [
-                             {
-                                 "contig": contigID, # string
-                                 "start": start, # int
-                                 "end": end # int or None
-                             }, { ... }, ...
-                         ]
-    '''
-    # Parse regions
-    parsedRegions = []
-    regionsRegex = re.compile(r"^([^:]+):(\d+)-(\d+)$")
-    for region in regions:
-        reMatch = regionsRegex.match(region)
-        
-        # Handle chr:start-end format
-        if reMatch != None:
-            contigID, start, end = reMatch.groups()
-            start = int(start)
-            end = int(end)
-            
-            # Detect and fix reverse orientation
-            if start > end:
-                start, end = end, start
-            
-            # Store region
-            parsedRegions.append({"contig": contigID, "start": start, "end": end})
-        
-        # Handle chr format
-        else:
-            parsedRegions.append({"contig": region, "start": 1, "end": None}) # None is interpreted as no end
-    
-    # Handle empty regions
-    if parsedRegions == []:
-        parsedRegions = None # None is interpreted as no selection"
-    
-    return parsedRegions
 
 def parse_annotate(columnAttributeDelimiter):
     '''
@@ -285,6 +245,22 @@ def validate_f_lengths(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_f_slice(args):
+    '''
+    Validation for arguments used in "fasta slice" mode.
+    '''
+    # Validate output file name
+    if args.outputFileName != None:
+        args.outputFileName = os.path.abspath(args.outputFileName)
+        if os.path.exists(args.outputFileName):
+            raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    
+    # Parse FASTA to lengths dictionary
+    lengthsDict = parse_fasta_to_lengths(args.fastaFile) # don't set in args as it won't be used later
+    
+    # Parse and validate slice regions
+    args.slices = parse_fasta_regions(args.slices, lengthsDict, argName="-s")
+
 def validate_f_softmask(args):
     '''
     Validation for arguments used in "fasta softmask" mode.
@@ -516,7 +492,7 @@ def validate_g_filter(args):
         raise ValueError("'gff3 filter' needs at least one of --regions or --list or --values to be set to do anything")
     
     # Parse regions
-    args.regions = parse_regions(args.regions)
+    args.regions = parse_gff3_regions(args.regions)
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)

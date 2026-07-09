@@ -451,6 +451,27 @@ def fasta_rename(args):
             
             fileOut.write(f">{newSeqID}\n{str(record)}\n")
 
+# fasta > slice
+def fasta_slice(args):
+    fasta = FASTATarium(args.fastaFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for region in args.slices:
+            contigID, start, end, isReversed = region["contig"], region["start"], region["end"], region["reverse"]
+            
+            # Take a slice of the sequence
+            thisContig = fasta[contigID][start-1:end] # region is 1-based (GFF3 style)
+            if isReversed:
+                thisContig = thisContig.reverse_complement()
+            
+            # Format the sequence ID
+            if isReversed:
+                seqID = f"{contigID}:{end}-{start}"
+            else:
+                seqID = f"{contigID}:{start}-{end}"
+            
+            # Write to file
+            fileOut.write(f">{seqID}\n{str(thisContig)}\n")
+
 # fasta > softmask
 def fasta_softmask_to_bed(args):
     '''

@@ -25,7 +25,7 @@ from modules.validation import validate_ap, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_explode, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_softmask, validate_f_stats, \
+    validate_f, validate_f_explode, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -37,7 +37,7 @@ from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_explode, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_softmask_to_bed, fasta_stats
+from modules.fasta import fasta_explode, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -433,6 +433,22 @@ def main():
                                an iterating integer; {seqid} for the original ID""",
                                default="")
     
+    # FASTA > slice mode
+    fsliceparser = subFASTAParsers.add_parser("slice",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="Slice region(s) from FASTA contig(s)")
+    fsliceparser.add_argument("-i", dest="fastaFile",
+                              required=True,
+                              help="Location of FASTA file")
+    fsliceparser.add_argument("-s", dest="slices",
+                              required=True,
+                              nargs="+",
+                              help="One or more slices in contig:start-end format")
+    fsliceparser.add_argument("-o", dest="outputFileName",
+                              required=False,
+                              help="Write FASTA slices to file")
+    
     # FASTA > softmask mode
     fsoftmaskparser = subFASTAParsers.add_parser("softmask",
                                                  parents=[p],
@@ -511,8 +527,7 @@ def main():
                                nargs="+",
                                help="""Optionally, specify one or more regions to select with
                                contig:start-end format (e.g., 'chr1:1000000-2000000') or just
-                               with the contig alone
-                               """,
+                               with the contig alone""",
                                default=[])
     gfilterparser.add_argument("--list", dest="listFile",
                                required=False,
@@ -1034,6 +1049,10 @@ def fmain(args):
         print("## FASTA sequence renaming ##")
         validate_f_rename(args)
         fasta_rename(args)
+    if args.fastaMode == "slice":
+        print("## FASTA slicing ##")
+        validate_f_slice(args) # sets args.slices with updated formatting
+        fasta_slice(args)
     if args.fastaMode == "softmask":
         print("## FASTA softmask to BED tabulation ##")
         validate_f_softmask(args)

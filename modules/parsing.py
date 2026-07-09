@@ -1,6 +1,9 @@
 #! python3
 
-import gzip, codecs
+import codecs
+import gzip
+import re
+from Bio import SeqIO
 from contextlib import contextmanager
 
 def get_codec(fileName):
@@ -112,3 +115,144 @@ def parse_list_file(fileName):
             if l != "":
                 listedValues.append(l)
     return listedValues
+
+def parse_fasta_to_lengths(fastaFile):
+    '''
+    Returns:
+        lengthsDict -- a dictionary where keys are contig IDs and values are integers giving
+                       the contig's length
+    '''
+    with read_gz_file(fastaFile) as fileIn:
+        genomeRecords = SeqIO.parse(fileIn, "fasta")
+        lengthsDict = { record.id:len(record) for record in genomeRecords }
+    
+    if lengthsDict == {}:
+        raise ValueError(f"No contigs found in genome FASTA '{fastaFile}'; is it actually a FASTA file?")
+    else:
+        return lengthsDict
+
+def parse_fasta_regions(regions, lengthsDict, argName="--regions"):
+    '''
+    Code helpfully copied from psQTL with minor modification.
+    
+    Parameters:
+        regions -- a list of strings in 'contig:start-end' format, and/or
+                   in 'contig' format; end can be > start to indicate e.g.,
+                   reverse complementation
+    Returns:
+        parsedRegions -- a list of dictionaries with structure like:
+                         [
+                             {
+                                 "contig": contigID, # string
+                                 "start": start, # int
+                                 "end": end, # int
+                                 "reverse": reverse] # bool
+                             }, { ... }, ...
+                         ]
+    '''
+    # Parse regions
+    parsedRegions = []
+    regionsRegex = re.compile(r"^([^:]+):(\d+)-(\d+)$")
+    for region in regions:
+        reMatch = regionsRegex.match(region)
+        
+        # Handle chr:start-end format
+        if reMatch != None:
+            contigID, start, end = reMatch.groups()
+            start = int(start)
+            end = int(end)
+            
+            # Validate contig ID
+            if not contigID in lengthsDict:
+                raise ValueError(f"{argName} contig ID '{contigID}' not found in the -f FASTA!")
+            
+            # Validate start position
+            if start < 0:
+                raise ValueError(f"{argName} start position '{start}' is < 0!")
+            if start == 0:
+                print(f"# Note: {argName} start position '{start}' was set to 1, to use 1-based indexing.")
+                start = 1
+            if start == end:
+                raise ValueError(f"{argName} start position '{start}' is equal to end position '{end}'!")
+            
+            # Detect reverse orientation and swap start/end if necessary
+            reverse = False
+            if start > end:
+                start, end = end, start
+                reverse = True
+            
+            # Validate end position
+            if end > lengthsDict[contigID]:
+                raise ValueError(f"{argName} '{contigID, start, end}' end position is > contig length '{lengthsDict[contigID]}'!")
+            
+            # Store region
+            if start <= 1 and end == lengthsDict[contigID]:
+                # If the region covers the full contig, set 'full' to True
+                parsedRegions.append({"contig": contigID, "start": start, "end": end, "reverse": reverse, "full": True})
+            else:
+                # Otherwise, set 'full' to False
+                parsedRegions.append({"contig": contigID, "start": start, "end": end, "reverse": reverse, "full": False})
+        
+        # Handle invalid format
+        elif ":" in region:
+            raise ValueError(f"Invalid region input '{region}'; you included a ':' but did " + 
+                             "not format the region as 'chr:start-end'!")
+        # Handle chr format
+        else:
+            if not region in lengthsDict:
+                raise ValueError(f"{argName} contig ID '{region}' not found in the -f FASTA!")
+            parsedRegions.append({"contig": region, "start": 1, "end": lengthsDict[region], "reverse": False, "full": True})
+    
+    # Handle empty regions
+    "Empty is interpreted as all regions"
+    if parsedRegions == []:
+        parsedRegions = [
+            {"contig": contigID, "start": 1, "end": lengthsDict[contigID], "reverse": False, "full": True}
+            for contigID in lengthsDict
+        ]
+    
+    return parsedRegions
+
+def parse_gff3_regions(regions):
+    '''
+    Simplified regions parsing without needing to know reverse complementation
+    or overall contig length
+    
+    Returns:
+        parsedRegions -- a list of dictionaries with structure like:
+                         [
+                             {
+                                 "contig": contigID, # string
+                                 "start": start, # int
+                                 "end": end # int or None
+                             }, { ... }, ...
+                         ]
+    '''
+    # Parse regions
+    parsedRegions = []
+    regionsRegex = re.compile(r"^([^:]+):(\d+)-(\d+)$")
+    for region in regions:
+        reMatch = regionsRegex.match(region)
+        
+        # Handle chr:start-end format
+        if reMatch != None:
+            contigID, start, end = reMatch.groups()
+            start = int(start)
+            end = int(end)
+            
+            # Detect and fix reverse orientation
+            if start > end:
+                start, end = end, start
+            
+            # Store region
+            parsedRegions.append({"contig": contigID, "start": start, "end": end})
+        
+        # Handle chr format
+        else:
+            parsedRegions.append({"contig": region, "start": 1, "end": None}) # None is interpreted as no end
+    
+    # Handle empty regions
+    if parsedRegions == []:
+        parsedRegions = None # None is interpreted as no selection"
+    
+    return parsedRegions
