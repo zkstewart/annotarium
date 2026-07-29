@@ -124,10 +124,14 @@ def annotable_tx2gene(args):
     bestGeneTx = {}
     for txID, row in annotable.df.iterrows():
         geneID = tx2gene[txID]
-        bitscore = float(row["Bit_score"].split(" [")[0])
+        try:
+            bitscore = float(row["Bit_score"].split(" [")[0])
+        except:
+            bitscore = None
         
-        bestGeneTx.setdefault(geneID, [None, 0])
-        if bitscore > bestGeneTx[geneID][1]:
+        bestGeneTx.setdefault(geneID, [txID, None])
+        prevBest = bestGeneTx[geneID][1]
+        if (bitscore is not None) and ((prevBest is None) or (bitscore > prevBest)):
             bestGeneTx[geneID] = [txID, bitscore]
     
     # Subset annotable DataFrame down to just the best transcript IDs
