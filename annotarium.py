@@ -422,10 +422,10 @@ def main():
     frenameparser.add_argument("--sub", dest="substitution",
                                required=False,
                                nargs="+",
-                               help="""Optionally provide one or more old:new pairs through the
-                               command-line, OR a TSV file with old\tnew format. Enacts a simple
-                               sed-like string substitution that is applied BEFORE --format
-                               is interpreted""",
+                               help="""Optionally provide one or more old:new (or old,new) pairs
+                               through the command-line, OR a TSV file with old\tnew format.
+                               Enacts a simple sed-like string substitution that is applied
+                               BEFORE --format is interpreted""",
                                default=[])
     frenameparser.add_argument("--format", dest="formatString",
                                required=False,
@@ -444,7 +444,8 @@ def main():
     fsliceparser.add_argument("-s", dest="slices",
                               required=True,
                               nargs="+",
-                              help="One or more slices in contig:start-end format")
+                              help="""One or more slices in contig:start-end format; give coordinates
+                              in 1-based and inclusive layout akin to GFF3""")
     fsliceparser.add_argument("-o", dest="outputFileName",
                               required=False,
                               help="Write FASTA slices to file")

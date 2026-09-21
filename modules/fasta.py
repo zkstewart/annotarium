@@ -433,7 +433,15 @@ def fasta_rc(args):
 
 # fasta > rename
 def fasta_rename(args):
-    subs = [ substitutionStr.split(":") for substitutionStr in args.substitution ]
+    '''
+    Parameters:
+        args.substitution -- a list containing tuples with format like:
+                             [
+                                 (old1, new1),
+                                 (old2, new2),
+                                 ...
+                             ]
+    '''
     fasta = FASTATarium(args.fastaFile)
     ongoingCount = 0
     with GzCapableWriter(args.outputFileName) as fileOut:
@@ -442,7 +450,7 @@ def fasta_rename(args):
             newSeqID = record.id
             
             # Apply substitutions
-            for old, new in subs:
+            for old, new in args.substitution:
                 newSeqID = newSeqID.replace(old, new)
             
             # Apply format string

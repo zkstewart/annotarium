@@ -321,6 +321,7 @@ def validate_f_rename(args):
         raise ValueError("--sub and/or --format must be provided for 'fasta rename' to do anything")
     
     # Validate that substitution strings are formatted appropriately
+    warnedOnce = False
     parsedSubstitutions = []
     for substitution in args.substitution:
         if os.path.isfile(substitution):
@@ -331,13 +332,24 @@ def validate_f_rename(args):
                         sl = l.split("\t")
                         if len(sl) != 2:
                             raise ValueError(f"--sub file '{substitution}' must be tab-delimited with two columns per old:new format")
-                        parsedSubstitutions.append(":".join(sl))
+                        parsedSubstitutions.append(sl)
         else:
-            try:
-                old, new = substitution.split(":")
-                parsedSubstitutions.append(substitution)
-            except:
-                raise ValueError(f"--sub value '{substitution}' must have a colon delimiter as per old:new format")
+            if "," and ":" in substitution:
+                if not warnedOnce:
+                    print(f"# WARNING: --sub value '{substitution}' contains a comma and a colon; " + 
+                          "comma is assumed to be the delimiter rather than colon")
+                    warnedOnce = True
+                delimiter = ","
+            elif "," in substitution:
+                delimiter = ","
+            elif ":" in substitution:
+                delimiter = ":"
+            else:
+                raise ValueError(f"--sub value '{substitution}' must have a comma or colon delimiter between old and new values")
+            
+            old, new = substitution.split(delimiter)
+            parsedSubstitutions.append((old, new))
+    
     args.substitution = parsedSubstitutions
     
     # Validate that format string is formatted appropriately
