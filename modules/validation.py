@@ -334,7 +334,7 @@ def validate_f_rename(args):
                             raise ValueError(f"--sub file '{substitution}' must be tab-delimited with two columns per old:new format")
                         parsedSubstitutions.append(sl)
         else:
-            if "," and ":" in substitution:
+            if "," in substitution and ":" in substitution:
                 if not warnedOnce:
                     print(f"# WARNING: --sub value '{substitution}' contains a comma and a colon; " + 
                           "comma is assumed to be the delimiter rather than colon")
