@@ -658,3 +658,34 @@ def fasta_stats(args):
         statsDF.loc["#Median"] = [medianStat, None, None]
         statsDF.loc["#Mean"] = [meanStat, None, None]
         statsDF.to_csv(args.outputFileName, sep="\t")
+
+# fasta > to > fasta
+def fasta_to_fasta(args):
+    '''
+    Records are streamed rather than indexed with FASTATarium, as with
+    fasta_concat().
+    
+    Parameters:
+        args.seqStrip -- a list of strings to remove from each sequence (not the ID)
+        args.lineLength -- an integer of characters per line, or 0 for no multilining
+    '''
+    lineLength = args.lineLength if args.lineLength > 0 else None
+    numEmpty = 0
+    exampleEmpty = None
+    with read_gz_file(args.fastaFile) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
+        for record in FASTATarium.fasta_parser(fileIn):
+            # Strip strings from the sequence
+            for stripString in args.seqStrip:
+                record.sequence = record.sequence.replace(stripString, "")
+            
+            # Skip sequences that are now empty
+            if len(record) == 0:
+                numEmpty += 1
+                if exampleEmpty is None:
+                    exampleEmpty = record.id
+                continue
+            
+            fileOut.write(record.format(lineLength))
+    
+    if numEmpty > 0:
+        print(f"# WARNING: {numEmpty} sequence(s), such as {exampleEmpty}, were empty after --seqstrip and were not written to the output")

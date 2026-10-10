@@ -26,6 +26,7 @@ from modules.validation import validate_ap, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_chunk, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
+        validate_f_to, validate_f_to_fasta, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -37,7 +38,8 @@ from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_chunk, fasta_concat, fasta_explode, fasta_filter, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
+from modules.fasta import fasta_chunk, fasta_concat, fasta_explode, fasta_filter, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats, \
+    fasta_to_fasta
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -601,6 +603,41 @@ def main():
     fstatsparser.add_argument("--out", "-o", dest="outputFileName",
                               required=False,
                               help="Optionally, write statistics output to file")
+    
+    # FASTA > to subparser
+    ftoparser = subFASTAParsers.add_parser("to",
+                                           parents=[p],
+                                           add_help=False,
+                                           help="FASTA conversion")
+    ftoparser.set_defaults(func=fmain)
+    
+    subFASTAToParsers = ftoparser.add_subparsers(dest="fastaToMode",
+                                                 required=True)
+    
+    # FASTA > to > fasta mode
+    ftofparser = subFASTAToParsers.add_parser("fasta",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="FASTA to FASTA re-formatter")
+    ftofparser.add_argument("-i", dest="fastaFile",
+                            required=True,
+                            help="Location of FASTA file")
+    ftofparser.add_argument("-o", dest="outputFileName",
+                            required=True,
+                            help="Location to write re-formatted FASTA file")
+    ftofparser.add_argument("--seqstrip", dest="seqStrip",
+                            required=False,
+                            nargs="+",
+                            help="""Optionally, specify one or more strings to remove from
+                            sequences (not IDs) e.g., '-' to convert an MSA back to unaligned
+                            FASTA; case sensitive""",
+                            default=[])
+    ftofparser.add_argument("--multiline", dest="lineLength",
+                            required=False,
+                            type=int,
+                            help="""Optionally, specify the number of characters per line
+                            in the output; default == 0 for no multilining""",
+                            default=0)
     
     # GFF3 subparser
     gparser = subparsers.add_parser("gff3",
@@ -1202,6 +1239,13 @@ def fmain(args):
         print("## FASTA statistics ##")
         validate_f_stats(args)
         fasta_stats(args)
+    
+    if args.fastaMode == "to":
+        validate_f_to(args)
+        if args.fastaToMode == "fasta":
+            print("## FASTA to FASTA re-formatter ##")
+            validate_f_to_fasta(args)
+            fasta_to_fasta(args)
     
     print("FASTA handling complete!")
 

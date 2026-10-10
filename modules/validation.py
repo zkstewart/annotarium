@@ -499,6 +499,29 @@ def validate_f_rename(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_f_to(args):
+    '''
+    Validation for arguments common to all "fasta to" mode commands.
+    '''
+    pass # no specific validation needed for this mode
+
+def validate_f_to_fasta(args):
+    '''
+    Validation for arguments used in "fasta to fasta" mode.
+    '''
+    # Validate numeric arguments
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+    
+    # Validate strings to strip from sequences
+    if "" in args.seqStrip:
+        raise ValueError("--seqstrip values cannot be empty strings")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_g(args):
     '''
     Validation for arguments common to all "gff3" mode commands.
