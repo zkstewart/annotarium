@@ -1,7 +1,7 @@
 import os, re, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, \
+from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
     parse_gff3_regions, parse_fasta_regions
 
 class DirectoryNotFoundError(Exception):
@@ -203,6 +203,58 @@ def validate_f(args):
     args.fastaFile = os.path.abspath(args.fastaFile)
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-i {args.fastaFile}) does not exist!")
+
+def validate_f_chunk(args):
+    '''
+    Validation for arguments used in "fasta chunk" mode.
+    '''
+    # Validate numeric arguments
+    if args.chunkValue < 1:
+        raise ValueError("-n must be >= 1")
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+    
+    # Validate that naive chunking is only used with sequences
+    if args.isNaive and args.chunkBy != "sequences":
+        raise ValueError("--naive can only be used with '--by sequences'")
+    
+    # Count the number of sequences in the FASTA file
+    with read_gz_file(args.fastaFile) as fileIn:
+        numSequences = sum([ 1 for line in fileIn if line.startswith(">") ])
+    if numSequences == 0:
+        raise ValueError(f"No sequences found in FASTA file (-i {args.fastaFile}); is it actually a FASTA file?")
+    if args.chunkBy == "chunks" and args.chunkValue > numSequences:
+        raise ValueError(f"-n {args.chunkValue} chunks is greater than the number of sequences " + 
+                         f"({numSequences}) in the FASTA file")
+    
+    # Derive the 0-based sequence indices at which new chunks begin
+    if args.isNaive:
+        args.chunkPoints = list(range(args.chunkValue, numSequences, args.chunkValue))
+    else:
+        args.chunkPoints = get_chunking_points(numSequences, args.chunkValue,
+                                               isNumOfChunks=args.chunkBy == "chunks")
+    
+    # Validate output directory
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
+    if not os.path.exists(args.outputDirectory):
+        parentDir = os.path.dirname(args.outputDirectory)
+        if not os.path.isdir(parentDir):
+            raise DirectoryNotFoundError((f"Output directory (-o {args.outputDirectory}) cannot be created since " + 
+                                          f"its parent directory ({parentDir}) does not exist. Create this location " +
+                                          "first or specify a different output location"))
+        os.mkdir(args.outputDirectory)
+        print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
+    
+    # Derive and validate output file names
+    numChunks = len(args.chunkPoints) + 1
+    numDigits = len(str(numChunks))
+    args.outputFileNames = [
+        os.path.join(args.outputDirectory, f"{args.prefix}{str(i+1).zfill(numDigits)}.fasta")
+        for i in range(numChunks)
+    ]
+    for outputFileName in args.outputFileNames:
+        if os.path.exists(outputFileName):
+            raise FileExistsError(f"Output file ({outputFileName}) already exists!")
 
 def validate_f_concat(args):
     '''

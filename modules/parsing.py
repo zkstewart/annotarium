@@ -2,6 +2,7 @@
 
 import codecs
 import gzip
+import math
 import re
 from Bio import SeqIO
 from contextlib import contextmanager
@@ -256,3 +257,52 @@ def parse_gff3_regions(regions):
         parsedRegions = None # None is interpreted as no selection"
     
     return parsedRegions
+
+def get_chunking_points(numberToChunk, chunks, isNumOfChunks=True):
+    '''
+    Code helpfully copied from variantopia with minor modification.
+    
+    This is a general purpose function to take in a number of "things"
+    that you want to chunk, and find out how to chunk them evenly.
+    
+    The resulting list should be interpreted as the 0-based indices where
+    a new chunk should form. You should check for this index at the start
+    of a loop, and form a new file if your index == the value in this list.
+    
+    Also, this uses "allocated chunking" such that it will try to keep
+    the number of things per chunk approximately equal. Even if you specify
+    X number of things per chunk, it might be more optimal to have X-1 in each
+    chunk so as to make sure the last chunk doesn't contain a single thing.
+    
+    Parameters:
+        numberToChunk -- an integer value, possibly derived from a list length as example.
+        chunks -- an integer value for the desired number of chunks OR the number of
+                  things to contain within each chunk, determined by
+        isNumOfChunks -- a boolean indicating whether you want the number to be the number
+                         of chunks (True), or the number of things within each chunk (False)
+    Returns:
+        chunkPoints -- a list of integers indicating the 0-based indices where a new chunk
+                       should begin; the first chunk (at index 0) is implicit and not included
+    '''
+    assert isinstance(numberToChunk, int)
+    assert isinstance(chunks, int)
+    if isNumOfChunks and numberToChunk < chunks:
+        raise ValueError(f"Chunking only valid if chunks <= numberToChunk i.e., {chunks} <= {numberToChunk}")
+    
+    # Derive how many chunks we want to split the things into
+    if isNumOfChunks:
+        numChunks = chunks
+    else:
+        numChunks = math.ceil(numberToChunk / chunks)
+    
+    # Find how many things go into each chunk, and how many chunks get one extra thing
+    baseSize, numRoundedUp = divmod(numberToChunk, numChunks)
+    
+    # Store positions at which to start a new chunk
+    chunkPoints = []
+    ongoingCount = 0
+    for i in range(numChunks - 1): # the last chunk runs until the end
+        ongoingCount += baseSize + 1 if i < numRoundedUp else baseSize
+        chunkPoints.append(ongoingCount)
+    
+    return chunkPoints

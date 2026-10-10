@@ -25,7 +25,7 @@ from modules.validation import validate_ap, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
+    validate_f, validate_f_chunk, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -37,7 +37,7 @@ from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_concat, fasta_explode, fasta_filter, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
+from modules.fasta import fasta_chunk, fasta_concat, fasta_explode, fasta_filter, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -326,6 +326,48 @@ def main():
     subFASTAParsers = fparser.add_subparsers(dest="fastaMode",
                                              required=True)
     
+    # FASTA > chunk mode
+    fchunkparser = subFASTAParsers.add_parser("chunk",
+                                              parents=[p],
+                                              add_help=False,
+                                              help="Split FASTA into chunks")
+    fchunkparser.add_argument("-i", dest="fastaFile",
+                              required=True,
+                              help="Location of FASTA file")
+    fchunkparser.add_argument("-o", dest="outputDirectory",
+                              required=True,
+                              help="Directory to write chunk files to")
+    fchunkparser.add_argument("-by", dest="chunkBy",
+                              required=True,
+                              choices=["chunks", "sequences"],
+                              help="""Specify whether -n indicates the number of output 'chunks'
+                              (the number of sequences per chunk may vary), or the number of
+                              'sequences' per chunk (the number of output chunks may vary)""")
+    fchunkparser.add_argument("-n", dest="chunkValue",
+                              required=True,
+                              type=int,
+                              help="""The number of chunks, or the number of sequences per
+                              chunk, according to -by""")
+    fchunkparser.add_argument("--naive", dest="isNaive",
+                              required=False,
+                              action="store_true",
+                              help="""Optionally, with '-by sequences', write exactly -n sequences
+                              per chunk such that the last chunk may be smaller; by default,
+                              allocated chunking is used to balance the number of sequences
+                              across chunks, which may result in fewer than -n sequences per chunk""",
+                              default=False)
+    fchunkparser.add_argument("--prefix", dest="prefix",
+                              required=False,
+                              help="""Optionally, specify the prefix for chunk file names, which
+                              are numbered like '{prefix}1.fasta'; default == 'chunk'""",
+                              default="chunk")
+    fchunkparser.add_argument("--multiline", dest="lineLength",
+                              required=False,
+                              type=int,
+                              help="""Optionally, specify the number of characters per line
+                              in the output; default == 0 for no multilining""",
+                              default=0)
+    
     # FASTA > concat mode
     fconcatparser = subFASTAParsers.add_parser("concat",
                                                parents=[p],
@@ -370,7 +412,7 @@ def main():
                                  required=True,
                                  help="Location of FASTA file")
     fexplodeparser.add_argument("-o", dest="outputDirectory",
-                                 required=False,
+                                 required=True,
                                  help="Directory to write contig files to")
     
     # FASTA > filter mode
@@ -1112,6 +1154,10 @@ def dmain(args):
 
 def fmain(args):
     # Split into sub-mode-specific functions
+    if args.fastaMode == "chunk":
+        print("## FASTA chunking ##")
+        validate_f_chunk(args) # sets args.chunkPoints and args.outputFileNames
+        fasta_chunk(args)
     if args.fastaMode == "concat":
         print("## FASTA concatenation ##")
         validate_f_concat(args) # sets args.fastaFiles as a list of files to concatenate

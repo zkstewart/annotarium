@@ -356,6 +356,35 @@ class FASTATarium:
             len(self.records)
         )
 
+# fasta > chunk
+def fasta_chunk(args):
+    '''
+    Records are streamed rather than indexed with FASTATarium, as with
+    fasta_concat().
+    
+    Parameters:
+        args.chunkPoints -- a list of 0-based sequence indices at which a new chunk begins
+        args.outputFileNames -- a list of file locations to write each chunk to, with length
+                                equal to len(args.chunkPoints) + 1
+        args.lineLength -- an integer of characters per line, or 0 for no multilining
+    '''
+    lineLength = args.lineLength if args.lineLength > 0 else None
+    chunkPoints = set(args.chunkPoints)
+    chunkIndex = 0
+    with read_gz_file(args.fastaFile) as fileIn:
+        fileOut = open(args.outputFileNames[chunkIndex], "w")
+        try:
+            for i, record in enumerate(FASTATarium.fasta_parser(fileIn)):
+                # Begin a new chunk file if we've reached a chunking point
+                if i in chunkPoints:
+                    fileOut.close()
+                    chunkIndex += 1
+                    fileOut = open(args.outputFileNames[chunkIndex], "w")
+                
+                fileOut.write(record.format(lineLength))
+        finally:
+            fileOut.close()
+
 # fasta > concat
 def fasta_concat(args):
     '''
