@@ -378,6 +378,20 @@ def validate_f_lengths(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_f_setops(args):
+    '''
+    Validation for arguments used in "fasta setops" mode.
+    '''
+    # Validate second FASTA file
+    args.fastaFile2 = os.path.abspath(args.fastaFile2)
+    if not os.path.isfile(args.fastaFile2):
+        raise FileNotFoundError(f"Second FASTA file (-i2 {args.fastaFile2}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_f_slice(args):
     '''
     Validation for arguments used in "fasta slice" mode.

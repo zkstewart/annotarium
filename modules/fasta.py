@@ -554,6 +554,40 @@ def fasta_rename(args):
             
             fileOut.write(f">{newSeqID}\n{str(record)}\n")
 
+# fasta > setops
+def fasta_setops(args):
+    '''
+    Sequence IDs are written in the order they are first encountered, with
+    IDs from the first file (-i) preceding those from the second file (-i2).
+    
+    Parameters:
+        args.setOperation -- a string of 'union', 'intersection', or 'difference';
+                             difference gives IDs in -i that are not in -i2
+    '''
+    def parse_ids(fastaFile):
+        ids = {} # dict acts as an ordered set
+        with read_gz_file(fastaFile) as fileIn:
+            for record in FASTATarium.fasta_parser(fileIn):
+                ids[record.id] = None
+        return ids
+    
+    ids1 = parse_ids(args.fastaFile)
+    ids2 = parse_ids(args.fastaFile2)
+    
+    # Perform the set operation
+    if args.setOperation == "union":
+        resultIDs = list(ids1) + [ seqID for seqID in ids2 if not seqID in ids1 ]
+    elif args.setOperation == "intersection":
+        resultIDs = [ seqID for seqID in ids1 if seqID in ids2 ]
+    elif args.setOperation == "difference":
+        resultIDs = [ seqID for seqID in ids1 if not seqID in ids2 ]
+    
+    # Write to file
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for seqID in resultIDs:
+            fileOut.write(f"{seqID}\n")
+    print(f"# {len(resultIDs)} sequence IDs written to output")
+
 # fasta > slice
 def fasta_slice(args):
     fasta = FASTATarium(args.fastaFile)
