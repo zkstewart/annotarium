@@ -25,7 +25,7 @@ from modules.validation import validate_ap, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_explode, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
+    validate_f, validate_f_concat, validate_f_explode, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_slice, validate_f_softmask, validate_f_stats, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -37,7 +37,7 @@ from modules.annotable import annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
-from modules.fasta import fasta_explode, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
+from modules.fasta import fasta_concat, fasta_explode, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_slice, fasta_softmask_to_bed, fasta_stats
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -114,7 +114,7 @@ def main():
                                required=True,
                                help="Location of annotable file")
     atgoseqparser.add_argument("-o", dest="outputFileName",
-                               required=False,
+                               required=True,
                                help="Write modified annotable file to this location")
     atgoseqparser.add_argument("--col", dest="columnHeader",
                                required=False,
@@ -139,7 +139,7 @@ def main():
                               required=True,
                               help="Location of GFF3 enabling relation of mRNAs to their genes")
     attx2gparser.add_argument("-o", dest="outputFileName",
-                              required=False,
+                              required=True,
                               help="Write modified annotable file to this location")
     
     # Blast subparser
@@ -164,7 +164,7 @@ def main():
                                results are sorted from most to least significant. This is default
                                behaviour for BLAST.""")
     bfilterparser.add_argument("-o", dest="outputFileName",
-                               required=False,
+                               required=True,
                                help="Write filtered outfmt6-style file to this location")
     bfilterparser.add_argument("--maxhits", dest="maxhits",
                                required=False,
@@ -198,7 +198,7 @@ def main():
                              required=True,
                              help="Location of GFF3 enabling relation of mRNAs to their genes")
     btx2gparser.add_argument("-o", dest="outputFileName",
-                             required=False,
+                             required=True,
                              help="Write modified outfmt6-style file to this location")
     
     # Blast > to subparser
@@ -255,7 +255,7 @@ def main():
                                  help="""File format/program results being input; '2columnleft' means cluster IDs/keys
                                  are in the left column and member IDs in the right column""")
     creformatparser.add_argument("-o", dest="outputFileName",
-                                 required=False,
+                                 required=True,
                                  help="Write reformatted file to this location")
     creformatparser.add_argument("-of", dest="outputFileFormat",
                                  required=True,
@@ -294,7 +294,7 @@ def main():
                                 required=True,
                                 help="Location of .domtblout or .domains.tsv file")
     dresolveparser.add_argument("-o", dest="outputFileName",
-                                required=False,
+                                required=True,
                                 help="Write parsed domtblout output to file")
     dresolveparser.add_argument("--evalue", dest="evalue",
                                 required=False,
@@ -326,6 +326,41 @@ def main():
     subFASTAParsers = fparser.add_subparsers(dest="fastaMode",
                                              required=True)
     
+    # FASTA > concat mode
+    fconcatparser = subFASTAParsers.add_parser("concat",
+                                               parents=[p],
+                                               add_help=False,
+                                               help="Concatenate FASTA files")
+    fconcatparser.add_argument("-i", dest="inputLocations",
+                               required=True,
+                               nargs="+",
+                               help="""Location of one or more FASTA files and/or directories
+                               containing FASTA files to concatenate""")
+    fconcatparser.add_argument("-o", dest="outputFileName",
+                               required=True,
+                               help="Location to write concatenated FASTA file")
+    fconcatparser.add_argument("--minimum", dest="minimumLength",
+                               required=False,
+                               type=int,
+                               help="""Optionally, specify the minimum length of a sequence to be
+                               included in the output; default == 0 for no minimum""",
+                               default=0)
+    fconcatparser.add_argument("--multiline", dest="lineLength",
+                               required=False,
+                               type=int,
+                               help="""Optionally, specify the number of characters per line
+                               in the output; default == 0 for no multilining""",
+                               default=0)
+    fconcatparser.add_argument("--suffixes", dest="fileSuffixes",
+                               required=False,
+                               nargs="+",
+                               help="""Optionally, specify one or more file endings to locate
+                               FASTA files within -i directories (a further '.gz' ending is
+                               tolerated); default == '.fasta' '.fas' '.fa' '.fna' '.faa'
+                               '.aa' '.prot' '.nucl' '.trans' '.mrna'""",
+                               default=[".fasta", ".fas", ".fa", ".fna", ".faa",
+                                        ".aa", ".prot", ".nucl", ".trans", ".mrna"])
+    
     # FASTA > explode mode
     fexplodeparser = subFASTAParsers.add_parser("explode",
                                                 parents=[p],
@@ -347,7 +382,7 @@ def main():
                              required=True,
                              help="Location of FASTA file")
     fgapsparser.add_argument("-o", dest="outputFileName",
-                             required=False,
+                             required=True,
                              help="Write gap region BED output to file")
     
     # FASTA > ids mode
@@ -359,7 +394,7 @@ def main():
                             required=True,
                             help="Location of FASTA file")
     flenparser.add_argument("-o", dest="outputFileName",
-                            required=False,
+                            required=True,
                             help="Location to write output")
     flenparser.add_argument("--descriptions", dest="asDescription",
                             required=False,
@@ -378,7 +413,7 @@ def main():
                             required=True,
                             help="Location of FASTA file")
     flenparser.add_argument("-o", dest="outputFileName",
-                            required=False,
+                            required=True,
                             help="Location to write output")
     flenparser.add_argument("--list", dest="asList",
                             required=False,
@@ -397,7 +432,7 @@ def main():
                            required=True,
                            help="Location of FASTA file")
     frcparser.add_argument("-o", dest="outputFileName",
-                           required=False,
+                           required=True,
                            help="Location to write modified FASTA file")
     frcparser.add_argument("--seqs", dest="sequences",
                            required=False,
@@ -417,7 +452,7 @@ def main():
                                required=True,
                                help="Location of FASTA file")
     frenameparser.add_argument("-o", dest="outputFileName",
-                               required=False,
+                               required=True,
                                help="Location to write modified FASTA file")
     frenameparser.add_argument("--sub", dest="substitution",
                                required=False,
@@ -447,7 +482,7 @@ def main():
                               help="""One or more slices in contig:start-end format; give coordinates
                               in 1-based and inclusive layout akin to GFF3""")
     fsliceparser.add_argument("-o", dest="outputFileName",
-                              required=False,
+                              required=True,
                               help="Write FASTA slices to file")
     
     # FASTA > softmask mode
@@ -459,7 +494,7 @@ def main():
                                  required=True,
                                  help="Location of FASTA file")
     fsoftmaskparser.add_argument("-o", dest="outputFileName",
-                                 required=False,
+                                 required=True,
                                  help="Write softmasked region BED output to file")
     
     # FASTA > stats mode
@@ -606,7 +641,7 @@ def main():
                            required=True,
                            help="Location of FASTA (e.g., genome) file")
     grcparser.add_argument("-o", dest="outputFileName",
-                           required=False,
+                           required=True,
                            help="Location to write modified FASTA file")
     grcparser.add_argument("--seqs", dest="sequences",
                            required=False,
@@ -1026,6 +1061,10 @@ def dmain(args):
 
 def fmain(args):
     # Split into sub-mode-specific functions
+    if args.fastaMode == "concat":
+        print("## FASTA concatenation ##")
+        validate_f_concat(args) # sets args.fastaFiles as a list of files to concatenate
+        fasta_concat(args)
     if args.fastaMode == "explode":
         print("## FASTA explosion ##")
         validate_f_explode(args)

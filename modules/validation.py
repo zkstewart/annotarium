@@ -195,10 +195,55 @@ def validate_f(args):
     '''
     Validation for arguments common to all "fasta" mode commands.
     '''
+    # Skip modes that take multiple input locations rather than one FASTA file
+    if args.fastaMode == "concat":
+        return
+
     # Validate FASTA file
     args.fastaFile = os.path.abspath(args.fastaFile)
     if not os.path.isfile(args.fastaFile):
         raise FileNotFoundError(f"FASTA file (-i {args.fastaFile}) does not exist!")
+
+def validate_f_concat(args):
+    '''
+    Validation for arguments used in "fasta concat" mode.
+    '''
+    # Locate FASTA files from file and/or directory inputs
+    args.fastaFiles = []
+    for inputLocation in args.inputLocations:
+        inputLocation = os.path.abspath(inputLocation)
+
+        # Handle directories
+        if os.path.isdir(inputLocation):
+            foundFiles = False
+            for f in sorted(os.listdir(inputLocation)):
+                file = os.path.join(inputLocation, f)
+                suffixFile = file[:-3] if file.endswith(".gz") else file # tolerate gzipped files
+                if os.path.isfile(file) and any([ suffixFile.endswith(s) for s in args.fileSuffixes ]):
+                    args.fastaFiles.append(file)
+                    foundFiles = True
+            if not foundFiles:
+                raise FileNotFoundError(f"Input directory (-i {inputLocation}) does not contain any files " +
+                                        f"ending with --suffixes {args.fileSuffixes}")
+
+        # Handle files
+        elif os.path.isfile(inputLocation): # don't need to check suffix here
+            args.fastaFiles.append(inputLocation)
+        else:
+            raise FileNotFoundError(f"Input location (-i {inputLocation}) is not a file or directory!")
+
+    # Validate numeric arguments
+    if args.minimumLength < 0:
+        raise ValueError("--minimum must be >= 0")
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    if not os.path.isdir(os.path.dirname(args.outputFileName)):
+        raise DirectoryNotFoundError(f"Output file (-o {args.outputFileName}) parent directory does not exist!")
 
 def validate_f_explode(args):
     '''

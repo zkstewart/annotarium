@@ -356,6 +356,37 @@ class FASTATarium:
             len(self.records)
         )
 
+# fasta > concat
+def fasta_concat(args):
+    '''
+    Records are streamed from each file rather than indexed with FASTATarium,
+    which avoids holding all files in memory and tolerates duplicate IDs
+    across files.
+
+    Parameters:
+        args.fastaFiles -- a list of FASTA file locations to concatenate in order
+        args.lineLength -- an integer of characters per line, or 0 for no multilining
+    '''
+    lineLength = args.lineLength if args.lineLength > 0 else None
+    foundIDs = set()
+    hasWarnedOnce = False
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for fastaFile in args.fastaFiles:
+            with read_gz_file(fastaFile) as fileIn:
+                for record in FASTATarium.fasta_parser(fileIn):
+                    # Skip sequences that are too short
+                    if len(record) < args.minimumLength:
+                        continue
+
+                    # Raise a warning if a duplicate ID exists
+                    if (record.id in foundIDs) and (not hasWarnedOnce):
+                        print(f"# WARNING: '{record.id}' found more than once in the concatenated files; " + 
+                              "further warnings will be suppressed")
+                        hasWarnedOnce = True
+
+                    fileOut.write(record.format(lineLength))
+                    foundIDs.add(record.id)
+
 # fasta > explode
 def fasta_explode(args):
     fasta = FASTATarium(args.fastaFile)
