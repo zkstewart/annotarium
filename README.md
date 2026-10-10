@@ -59,6 +59,7 @@ annotarium is written in Python and requires a modern version 3. It makes use of
 - numpy (https://numpy.org/)
 - pandas (https://pandas.pydata.org/)
 - ncls (https://pypi.org/project/ncls)
+- pyfaidx (https://github.com/mdshw5/pyfaidx)
 
 annotarium has been developed on Linux and within Windows Subsystem for Linux (WSL), but at this stage is likely to be fully Windows compatible.
 

@@ -25,7 +25,7 @@ from modules.validation import validate_ap, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
-    validate_f, validate_f_chunk, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_setops, validate_f_slice, validate_f_softmask, validate_f_stats, \
+    validate_f, validate_f_chunk, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_grabber, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_setops, validate_f_slice, validate_f_softmask, validate_f_stats, \
         validate_f_to, validate_f_to_fasta, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
@@ -40,6 +40,7 @@ from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
 from modules.fasta import fasta_chunk, fasta_concat, fasta_explode, fasta_filter, fasta_gaps_to_bed, fasta_ids, fasta_lengths, fasta_rc, fasta_rename, fasta_setops, fasta_slice, fasta_softmask_to_bed, fasta_stats, \
     fasta_to_fasta
+from modules.grabber import fasta_grabber
 from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_relabel, gff3_rc, gff3_sort, gff3_stats, \
     gff3_mp_reformat, gff3_mp_resolve, \
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
@@ -479,6 +480,31 @@ def main():
     fgapsparser.add_argument("-o", dest="outputFileName",
                              required=True,
                              help="Write gap region BED output to file")
+    
+    # FASTA > grabber mode
+    fgrabberparser = subFASTAParsers.add_parser("grabber",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="Retrieve or remove sequences by ID")
+    fgrabberparser.add_argument("-i", dest="fastaFile",
+                                required=True,
+                                help="Location of FASTA file")
+    fgrabberparser.add_argument("-s", dest="sequences",
+                                required=True,
+                                nargs="+",
+                                help="""Specify one or more sequence IDs and/or files listing sequence
+                                IDs; values must exactly match a sequence's ID (everything up to the
+                                first whitespace) or its full description""")
+    fgrabberparser.add_argument("-o", dest="outputFileName",
+                                required=True,
+                                help="Location to write FASTA file")
+    fgrabberparser.add_argument("--behaviour", "-b", dest="behaviour",
+                                required=False,
+                                choices=["retrieve", "remove"],
+                                help="""Optionally, specify whether to 'retrieve' the -s sequences
+                                (in the order given) or 'remove' them (retaining file order);
+                                default == 'retrieve'""",
+                                default="retrieve")
     
     # FASTA > ids mode
     flenparser = subFASTAParsers.add_parser("ids",
@@ -1231,6 +1257,10 @@ def fmain(args):
         print("## FASTA gaps to BED tabulation ##")
         validate_f_gaps(args)
         fasta_gaps_to_bed(args)
+    if args.fastaMode == "grabber":
+        print("## FASTA sequence grabber ##")
+        validate_f_grabber(args) # sets args.sequences as a deduplicated list
+        fasta_grabber(args)
     if args.fastaMode == "ids":
         print("## FASTA identifiers ##")
         validate_f_ids(args)

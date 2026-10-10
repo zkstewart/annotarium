@@ -358,6 +358,31 @@ def validate_f_gaps(args):
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
+def validate_f_grabber(args):
+    '''
+    Validation for arguments used in "fasta grabber" mode.
+    '''
+    # Parse sequence IDs and/or descriptions from values and/or files
+    parsedSequences = {} # dict acts as an ordered set
+    for value in args.sequences:
+        if not os.path.isfile(value):
+            values = [value]
+        else:
+            values = parse_list_file(value)
+        for v in values:
+            v = v.lstrip(">") # tolerate values copied from FASTA headers
+            if v != "":
+                parsedSequences[v] = None
+    
+    if parsedSequences == {}:
+        raise ValueError("-s did not provide any sequence IDs or descriptions to grab")
+    args.sequences = list(parsedSequences)
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_f_ids(args):
     '''
     Validation for arguments used in "fasta ids" mode.
