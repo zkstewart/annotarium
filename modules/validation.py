@@ -1,4 +1,4 @@
-import os, re, sys
+import os, re, shutil, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
@@ -555,6 +555,35 @@ def validate_f_to_fasta(args):
     # Validate strings to strip from sequences
     if "" in args.seqStrip:
         raise ValueError("--seqstrip values cannot be empty strings")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_f_to_msa(args):
+    '''
+    Validation for arguments used in "fasta to msa" mode.
+    '''
+    # Validate MAFFT executable
+    if args.mafft == None:
+        args.mafft = shutil.which("mafft")
+        if args.mafft == None:
+            raise FileNotFoundError("mafft is not discoverable in your system PATH and --mafft was not specified")
+    else:
+        args.mafft = os.path.abspath(args.mafft)
+        if not os.path.isfile(args.mafft):
+            raise FileNotFoundError(f"MAFFT executable (--mafft {args.mafft}) does not exist!")
+    
+    # Validate numeric arguments
+    if args.maxiterate < 0:
+        raise ValueError("--maxiterate must be >= 0")
+    if args.algorithm == "fftnsi" and args.maxiterate < 2:
+        raise ValueError("--maxiterate must be >= 2 when using '--alg fftnsi'")
+    if args.algorithm == "auto" and args.maxiterate != 0:
+        print("# WARNING: --maxiterate is ignored when using '--alg auto' since MAFFT chooses this itself")
+    if args.threads < 1:
+        raise ValueError("--threads must be >= 1")
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)

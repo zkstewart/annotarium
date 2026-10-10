@@ -26,7 +26,7 @@ from modules.validation import validate_ap, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
     validate_f, validate_f_chunk, validate_f_concat, validate_f_explode, validate_f_filter, validate_f_gaps, validate_f_grabber, validate_f_ids, validate_f_lengths, validate_f_rc, validate_f_rename, validate_f_setops, validate_f_slice, validate_f_softmask, validate_f_stats, \
-        validate_f_to, validate_f_to_fasta, \
+        validate_f_to, validate_f_to_fasta, validate_f_to_msa, \
     validate_g, validate_g_annotate, validate_g_filter, validate_g_merge, validate_g_pcr, \
         validate_g_relabel, validate_g_rc, validate_g_sort, validate_g_stats, \
     validate_g_to, validate_g_to_tsv, validate_g_to_fasta, validate_g_to_gff3, \
@@ -46,6 +46,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
     gff3_to_fasta, gff3_to_tsv, gff3_to_gff3
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
+from modules.msa import fasta_to_msa
 from modules.rnammer import rnammer_reformat
 from _version import __version__
 
@@ -685,6 +686,48 @@ def main():
                             in the output; default == 0 for no multilining""",
                             default=0)
     
+    # FASTA > to > msa mode
+    ftomsaparser = subFASTAToParsers.add_parser("msa",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="FASTA to MSA with MAFFT")
+    ftomsaparser.add_argument("-i", dest="fastaFile",
+                              required=True,
+                              help="Location of FASTA file")
+    ftomsaparser.add_argument("-o", dest="outputFileName",
+                              required=True,
+                              help="Location to write MSA FASTA file")
+    ftomsaparser.add_argument("--mafft", dest="mafft",
+                              required=False,
+                              help="""Optionally, specify the mafft executable file
+                              if it is not discoverable in the path""",
+                              default=None)
+    ftomsaparser.add_argument("--alg", dest="algorithm",
+                              required=False,
+                              choices=["auto", "einsi", "linsi", "ginsi", "fftns1", "fftns2", "fftnsi"],
+                              help="""Optionally, specify the MAFFT algorithm to use for alignment;
+                              default == 'auto'""",
+                              default="auto")
+    ftomsaparser.add_argument("--maxiterate", dest="maxiterate",
+                              required=False,
+                              type=int,
+                              help="""Optionally, specify the --maxiterate value to use for alignment;
+                              this is ignored by '--alg auto'; default == 0""",
+                              default=0)
+    ftomsaparser.add_argument("--threads", dest="threads",
+                              required=False,
+                              type=int,
+                              help="""Optionally, specify the number of threads to use for alignment;
+                              default == 1""",
+                              default=1)
+    ftomsaparser.add_argument("--codons", dest="asCodons",
+                              required=False,
+                              action="store_true",
+                              help="""Optionally, provide this flag to align nucleotide sequences
+                              by codon; sequences are translated in the +ve strand and frame 0,
+                              so they should be CDS' that match this assumption""",
+                              default=False)
+    
     # GFF3 subparser
     gparser = subparsers.add_parser("gff3",
                                     parents=[p],
@@ -1300,6 +1343,10 @@ def fmain(args):
             print("## FASTA to FASTA re-formatter ##")
             validate_f_to_fasta(args)
             fasta_to_fasta(args)
+        if args.fastaToMode == "msa":
+            print("## FASTA to MSA alignment ##")
+            validate_f_to_msa(args)
+            fasta_to_msa(args)
     
     print("FASTA handling complete!")
 
