@@ -387,8 +387,15 @@ def fasta_concat(args):
                     fileOut.write(record.format(lineLength))
                     foundIDs.add(record.id)
 
-# fasta > cull
-def fasta_cull(args):
+# fasta > explode
+def fasta_explode(args):
+    fasta = FASTATarium(args.fastaFile)
+    for record in fasta:
+        with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
+            fileOut.write(record.format())
+
+# fasta > filter
+def fasta_filter(args):
     '''
     Records are streamed rather than indexed with FASTATarium, as with
     fasta_concat().
@@ -396,6 +403,12 @@ def fasta_cull(args):
     Parameters:
         args.minimumLength -- an integer of the minimum length (inclusive) to retain, or None
         args.maximumLength -- an integer of the maximum length (inclusive) to retain, or None
+        args.include -- a list of strings; if non-empty, only sequences containing at least
+                        one of these strings are retained
+        args.exclude -- a list of strings; sequences containing any of these strings are
+                        removed (takes precedence over args.include)
+        args.asDescription -- a boolean indicating whether to search for strings in the full
+                              description rather than just the sequence ID
         args.lineLength -- an integer of characters per line, or 0 for no multilining
     '''
     lineLength = args.lineLength if args.lineLength > 0 else None
@@ -407,14 +420,14 @@ def fasta_cull(args):
             if args.maximumLength != None and len(record) > args.maximumLength:
                 continue
             
+            # Skip sequences based on the strings in their ID or description
+            searchString = record.description if args.asDescription else record.id
+            if args.include != [] and not any([ x in searchString for x in args.include ]):
+                continue
+            if any([ x in searchString for x in args.exclude ]):
+                continue
+            
             fileOut.write(record.format(lineLength))
-
-# fasta > explode
-def fasta_explode(args):
-    fasta = FASTATarium(args.fastaFile)
-    for record in fasta:
-        with open(os.path.join(args.outputDirectory, f"{record.id}.fasta"), "w") as fileOut:
-            fileOut.write(record.format())
 
 # fasta > gaps
 def fasta_gaps_to_bed(args):

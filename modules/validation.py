@@ -245,30 +245,6 @@ def validate_f_concat(args):
     if not os.path.isdir(os.path.dirname(args.outputFileName)):
         raise DirectoryNotFoundError(f"Output file (-o {args.outputFileName}) parent directory does not exist!")
 
-def validate_f_cull(args):
-    '''
-    Validation for arguments used in "fasta cull" mode.
-    '''
-    # Validate that the program has something to do
-    if args.minimumLength == None and args.maximumLength == None:
-        raise ValueError("--minimum and/or --maximum must be provided for 'fasta cull' to do anything")
-    
-    # Validate numeric arguments
-    if args.minimumLength != None and args.minimumLength < 0:
-        raise ValueError("--minimum must be >= 0")
-    if args.maximumLength != None and args.maximumLength < 0:
-        raise ValueError("--maximum must be >= 0")
-    if args.minimumLength != None and args.maximumLength != None:
-        if args.minimumLength > args.maximumLength:
-            raise ValueError(f"--minimum ({args.minimumLength}) must be <= --maximum ({args.maximumLength})")
-    if args.lineLength < 0:
-        raise ValueError("--multiline must be >= 0")
-    
-    # Validate output file name
-    args.outputFileName = os.path.abspath(args.outputFileName)
-    if os.path.exists(args.outputFileName):
-        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
-
 def validate_f_explode(args):
     '''
     Validation for arguments used in "fasta explode" mode.
@@ -283,6 +259,42 @@ def validate_f_explode(args):
                                           "first or specify a different output location"))
         os.mkdir(args.outputDirectory)
         print(f"# Created output directory (-o {args.outputDirectory}) as part of argument validation")
+
+def validate_f_filter(args):
+    '''
+    Validation for arguments used in "fasta filter" mode.
+    '''
+    # Validate that the program has something to do
+    if args.minimumLength == None and args.maximumLength == None \
+        and args.include == [] and args.exclude == []:
+        raise ValueError("--minimum, --maximum, --include and/or --exclude must be provided " + 
+                         "for 'fasta filter' to do anything")
+    
+    # Validate numeric arguments
+    if args.minimumLength != None and args.minimumLength < 0:
+        raise ValueError("--minimum must be >= 0")
+    if args.maximumLength != None and args.maximumLength < 0:
+        raise ValueError("--maximum must be >= 0")
+    if args.minimumLength != None and args.maximumLength != None:
+        if args.minimumLength > args.maximumLength:
+            raise ValueError(f"--minimum ({args.minimumLength}) must be <= --maximum ({args.maximumLength})")
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+    
+    # Parse include and exclude strings from values and/or files
+    for argName in ["include", "exclude"]:
+        parsedStrings = []
+        for value in getattr(args, argName):
+            if not os.path.isfile(value):
+                parsedStrings.append(value)
+            else:
+                parsedStrings.extend(parse_list_file(value))
+        setattr(args, argName, parsedStrings)
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_f_gaps(args):
     '''
