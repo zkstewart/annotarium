@@ -387,6 +387,28 @@ def fasta_concat(args):
                     fileOut.write(record.format(lineLength))
                     foundIDs.add(record.id)
 
+# fasta > cull
+def fasta_cull(args):
+    '''
+    Records are streamed rather than indexed with FASTATarium, as with
+    fasta_concat().
+    
+    Parameters:
+        args.minimumLength -- an integer of the minimum length (inclusive) to retain, or None
+        args.maximumLength -- an integer of the maximum length (inclusive) to retain, or None
+        args.lineLength -- an integer of characters per line, or 0 for no multilining
+    '''
+    lineLength = args.lineLength if args.lineLength > 0 else None
+    with read_gz_file(args.fastaFile) as fileIn, GzCapableWriter(args.outputFileName) as fileOut:
+        for record in FASTATarium.fasta_parser(fileIn):
+            # Skip sequences outside of the length thresholds
+            if args.minimumLength != None and len(record) < args.minimumLength:
+                continue
+            if args.maximumLength != None and len(record) > args.maximumLength:
+                continue
+            
+            fileOut.write(record.format(lineLength))
+
 # fasta > explode
 def fasta_explode(args):
     fasta = FASTATarium(args.fastaFile)
