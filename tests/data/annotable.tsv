@@ -1,0 +1,5 @@
+#Query	Source	Target_accession	Gene_names	Taxa_names	Percentage_identity	Expect_value	Bit_score	Best_hit_with_idmapping	Best_mapped_GOs	Best_mapped_GOs_+_parents
+gene1	UniRef90	A1 [A2][A3]	protein kinase [partial] [kinase-like][hypothetical protein]	Zea mays [Oryza sativa][Zea mays]	98.5 [80.1][45.0]	1.00e-100 [2e-30][0.5]	350 [120][30]	A1	GO:1	GO:1; GO:0
+gene2	UniRef90	B1 [B2]	uncharacterized protein [transporter]	Zea mays [Zea mays]	70.0 [60.0]	1e-10 [1e-5]	90 [50]	B2	GO:2	GO:2; GO:0
+gene3	.	.	.	.	.	.	.	.	.	.
+gene4	UniRef90	C1	heat shock protein	Oryza sativa	99.0	0.0	500	C1	GO:3	GO:3; GO:0

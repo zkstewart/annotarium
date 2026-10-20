@@ -5,11 +5,13 @@ import os, re, sys, unittest, shutil, subprocess, tempfile
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.fasta import FASTATarium, Sequence
 from modules.msa import MAFFT
+from modules.annotable import Annotable
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 dataDir = os.path.join(baseDir, "tests", "data")
 codonIndelsFile = os.path.join(dataDir, "codon_indels.fasta")
+annotableFile = os.path.join(dataDir, "annotable.tsv")
 
 MAFFT_EXE = shutil.which("mafft")
 
@@ -32,6 +34,20 @@ def parse_fasta(fastaFile):
     '''
     with open(fastaFile, "r") as fileIn:
         return list(FASTATarium.fasta_parser(fileIn))
+
+def run_annotable_filter(outputFile, *filterArgs):
+    '''
+    Parameters:
+        outputFile -- a string indicating the location to write the filtered annotable
+        filterArgs -- strings to pass as arguments to 'annotable filter'
+    '''
+    cmd = [
+        sys.executable, os.path.join(baseDir, "annotarium.py"), "annotable", "filter",
+        "-i", annotableFile,
+        "-o", outputFile,
+        *filterArgs
+    ]
+    return run_subprocess(cmd)
 
 def gaps_are_codon_aligned(sequence):
     '''
@@ -318,6 +334,221 @@ class TestFastaToMSA(unittest.TestCase):
             self.assertNotEqual(returncode, 0)
             self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
             self.assertFalse(os.path.exists(outputFile), "No output file should be written")
+
+class TestAnnotableHits(unittest.TestCase):
+    def test_split_hits(self):
+        "Test splitting of multi-hit values into individual hits"
+        # Act & Assert
+        self.assertEqual(Annotable.split_hits(".", 0), [])
+        self.assertEqual(Annotable.split_hits("A1", 1), ["A1"])
+        self.assertEqual(Annotable.split_hits("A1 [A2][A3]", 3), ["A1", "A2", "A3"])
+        self.assertEqual(Annotable.split_hits("Zea mays [Oryza sativa]", 2), ["Zea mays", "Oryza sativa"])
+    
+    def test_split_hits_brackets_in_first_hit(self):
+        "Test that brackets within the first hit's value do not disrupt splitting"
+        # Act
+        hits = Annotable.split_hits("protein kinase [partial] [kinase-like][hypothetical protein]", 3)
+        
+        # Assert
+        self.assertEqual(hits, ["protein kinase [partial]", "kinase-like", "hypothetical protein"])
+    
+    def test_split_hits_count_mismatch(self):
+        "Test that values which cannot be split into the expected number of hits give None"
+        # Act & Assert
+        self.assertIsNone(Annotable.split_hits("only one name", 2))
+        self.assertIsNone(Annotable.split_hits("A1 [A2]", 3))
+        self.assertIsNone(Annotable.split_hits("A1", 0))
+    
+    def test_join_hits(self):
+        "Test joining of individual hits into the multi-hit format"
+        # Act & Assert
+        self.assertEqual(Annotable.join_hits([]), ".")
+        self.assertEqual(Annotable.join_hits(["A1"]), "A1")
+        self.assertEqual(Annotable.join_hits(["A1", "A2", "A3"]), "A1 [A2][A3]")
+    
+    def test_split_join_round_trip(self):
+        "Test that splitting then joining every hit column returns the original values"
+        # Arrange
+        annotable = Annotable(annotableFile)
+        
+        # Act & Assert
+        for rowID, row in annotable.df.iterrows():
+            accessions = row["Target_accession"]
+            numHits = 0 if accessions == "." else len(accessions.replace(" ", "").replace("]", "").split("["))
+            for col in Annotable.HIT_COLUMNS:
+                if col in annotable.df.columns:
+                    hits = Annotable.split_hits(row[col], numHits)
+                    self.assertEqual(Annotable.join_hits(hits), row[col], f"'{rowID}' column '{col}'")
+    
+    def test_load_retains_values(self):
+        "Test that loading then writing an annotable retains values exactly as written"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "annotable.tsv")
+            
+            # Act
+            Annotable(annotableFile).write(outputFile)
+            
+            # Assert
+            with open(annotableFile) as originalIn, open(outputFile) as writtenIn:
+                self.assertEqual(originalIn.read(), writtenIn.read())
+    
+    def test_filter_hits_maxhits(self):
+        "Test that --maxhits retains the best hits across all hit columns"
+        # Arrange
+        annotable = Annotable(annotableFile)
+        
+        # Act
+        numModified = annotable.filter_hits(maxhits=1)
+        
+        # Assert
+        self.assertEqual(numModified, 2, "gene1 and gene2 have more than 1 hit")
+        self.assertEqual(annotable["gene1"]["Target_accession"], "A1")
+        self.assertEqual(annotable["gene1"]["Gene_names"], "protein kinase [partial]")
+        self.assertEqual(annotable["gene1"]["Expect_value"], "1.00e-100")
+        self.assertEqual(annotable["gene4"]["Target_accession"], "C1", "Single hit rows should be unchanged")
+    
+    def test_filter_hits_idmapping_reset(self):
+        "Test that ID mapping columns are reset if their best mapped hit is removed"
+        # Arrange
+        annotable = Annotable(annotableFile)
+        
+        # Act
+        annotable.filter_hits(maxhits=1)
+        
+        # Assert
+        "gene1's best mapped hit (A1) is retained, but gene2's (B2) is removed"
+        self.assertEqual(annotable["gene1"]["Best_mapped_GOs"], "GO:1")
+        for col in Annotable.IDMAPPING_COLUMNS:
+            self.assertEqual(annotable["gene2"][col], ".")
+    
+    def test_filter_hits_evalue(self):
+        "Test that --evalue removes worse hits and empties rows without any passing hits"
+        # Arrange
+        annotable = Annotable(annotableFile)
+        
+        # Act
+        numModified = annotable.filter_hits(evalue=1e-20)
+        
+        # Assert
+        self.assertEqual(numModified, 2)
+        self.assertEqual(annotable["gene1"]["Target_accession"], "A1 [A2]")
+        self.assertEqual(annotable["gene1"]["Expect_value"], "1.00e-100 [2e-30]")
+        self.assertEqual(len(annotable), 4, "Rows should not be removed by --evalue")
+        for col in ["Source", *Annotable.HIT_COLUMNS, *Annotable.IDMAPPING_COLUMNS]:
+            if col in annotable.df.columns: # test file is a slim table lacking some hit columns
+                self.assertEqual(annotable["gene2"][col], ".", f"gene2 column '{col}' should be emptied")
+    
+    def test_filter_hits_evalue_then_maxhits(self):
+        "Test that --maxhits is applied to the hits remaining after --evalue"
+        # Arrange
+        annotable = Annotable(annotableFile)
+        
+        # Act
+        annotable.filter_hits(evalue=1e-50, maxhits=2)
+        
+        # Assert
+        self.assertEqual(annotable["gene1"]["Target_accession"], "A1")
+    
+    def test_filter_hits_inconsistent_columns(self):
+        "Test that an error is raised if a hit column disagrees with Target_accession"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            badFile = os.path.join(tmpDir, "bad.tsv")
+            with open(badFile, "w") as fileOut:
+                fileOut.write("#Query\tTarget_accession\tGene_names\nq1\tA1 [A2]\tonly one name\n")
+            annotable = Annotable(badFile)
+            
+            # Act & Assert
+            with self.assertRaises(ValueError):
+                annotable.filter_hits(maxhits=1)
+
+class TestAnnotableFilter(unittest.TestCase):
+    def test_include_columns(self):
+        "Test that --include only matches within the specified --columns"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            
+            # Act
+            returncode, stdout, stderr = run_annotable_filter(outputFile, "--include", "Oryza",
+                                                              "--columns", "Taxa_names")
+            
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            self.assertEqual(Annotable(outputFile).rowNames, ["gene1", "gene4"])
+    
+    def test_include_all_columns(self):
+        "Test that --include matches within any column by default"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            
+            # Act
+            returncode, stdout, stderr = run_annotable_filter(outputFile, "--include", "GO:3", "transporter")
+            
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            self.assertEqual(Annotable(outputFile).rowNames, ["gene2", "gene4"])
+    
+    def test_exclude_query_column(self):
+        "Test that --exclude can match the #Query column"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            
+            # Act
+            returncode, stdout, stderr = run_annotable_filter(outputFile, "--exclude", "gene1", "gene3",
+                                                              "--columns", "#Query")
+            
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            self.assertEqual(Annotable(outputFile).rowNames, ["gene2", "gene4"])
+    
+    def test_include_after_maxhits(self):
+        "Test that --include only matches against hits retained by --maxhits"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            
+            # Act
+            "'transporter' is only gene2's second hit"
+            returncode, stdout, stderr = run_annotable_filter(outputFile, "--include", "transporter",
+                                                              "--maxhits", "1")
+            
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            self.assertEqual(Annotable(outputFile).rowNames, [])
+    
+    def test_invalid_column(self):
+        "Test that --columns values not in the annotable header are refused"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            expectedError = "--columns value 'Nope' is not a header"
+            
+            # Act
+            returncode, stdout, stderr = run_annotable_filter(outputFile, "--include", "x",
+                                                              "--columns", "Nope")
+            
+            # Assert
+            self.assertNotEqual(returncode, 0)
+            self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
+            self.assertFalse(os.path.exists(outputFile), "No output file should be written")
+    
+    def test_nothing_to_do(self):
+        "Test that the command is refused if no filtering arguments are given"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "filtered.tsv")
+            expectedError = "must be provided for 'annotable filter' to do anything"
+            
+            # Act
+            returncode, stdout, stderr = run_annotable_filter(outputFile)
+            
+            # Assert
+            self.assertNotEqual(returncode, 0)
+            self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
 
 if __name__ == '__main__':
     unittest.main()

@@ -36,7 +36,7 @@ def validate_at(args):
     Validation for arguments common to all "annotable" mode commands.
     '''
     # Validate annotable file
-    args.annotable = os.path.abspath(args.annotableFile)
+    args.annotableFile = os.path.abspath(args.annotableFile)
     if not os.path.isfile(args.annotableFile):
         raise FileNotFoundError(f"Annotable file (-i {args.annotableFile}) does not exist!")
     
@@ -45,6 +45,48 @@ def validate_at(args):
         args.outputFileName = os.path.abspath(args.outputFileName)
         if os.path.exists(args.outputFileName):
             raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_at_filter(args):
+    '''
+    Validation for arguments used in "annotable filter" mode.
+    '''
+    # Validate that the program has something to do
+    if args.include == [] and args.exclude == [] and args.evalue == None and args.maxhits == None:
+        raise ValueError("--include, --exclude, --evalue and/or --maxhits must be provided " + 
+                         "for 'annotable filter' to do anything")
+    
+    # Validate numeric arguments
+    if args.evalue != None and args.evalue < 0:
+        raise ValueError("--evalue cannot be negative")
+    if args.maxhits != None and args.maxhits < 1:
+        raise ValueError("--maxhits must be >= 1")
+    
+    # Parse include and exclude strings from values and/or files
+    for argName in ["include", "exclude"]:
+        parsedStrings = []
+        for value in getattr(args, argName):
+            if not os.path.isfile(value):
+                parsedStrings.append(value)
+            else:
+                parsedStrings.extend(parse_list_file(value))
+        setattr(args, argName, parsedStrings)
+    
+    # Validate column headers against the annotable file
+    with read_gz_file(args.annotableFile) as fileIn:
+        header = fileIn.readline().rstrip("\r\n").split("\t")
+    
+    if args.columns == []:
+        args.columns = header
+    else:
+        for column in args.columns:
+            if not column in header:
+                raise ValueError(f"--columns value '{column}' is not a header in -i '{args.annotableFile}'; " + 
+                                 f"available columns are {header}")
+    
+    if (args.evalue != None or args.maxhits != None) and not "Target_accession" in header:
+        raise ValueError(f"--evalue and --maxhits require a 'Target_accession' column in -i '{args.annotableFile}'")
+    if args.evalue != None and not "Expect_value" in header:
+        raise ValueError(f"--evalue requires an 'Expect_value' column in -i '{args.annotableFile}'")
 
 def validate_at_goseq(args):
     '''

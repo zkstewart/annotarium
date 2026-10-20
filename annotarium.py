@@ -21,7 +21,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
-    validate_at, validate_at_goseq, validate_at_tx2gene, \
+    validate_at, validate_at_filter, validate_at_goseq, validate_at_tx2gene, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
     validate_d, validate_d_resolve, \
@@ -34,7 +34,7 @@ from modules.validation import validate_ap, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
-from modules.annotable import annotable_goseq, annotable_tx2gene
+from modules.annotable import annotable_filter, annotable_goseq, annotable_tx2gene
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -108,6 +108,51 @@ def main():
     
     subAnnotableParsers = atparser.add_subparsers(dest="annotableMode",
                                                   required=True)
+    
+    # Annotable > filter mode
+    atfilterparser = subAnnotableParsers.add_parser("filter",
+                                                    parents=[p],
+                                                    add_help=False,
+                                                    help="Filter annotable rows and/or hits")
+    atfilterparser.add_argument("-i", dest="annotableFile",
+                                required=True,
+                                help="Location of annotable file")
+    atfilterparser.add_argument("-o", dest="outputFileName",
+                                required=True,
+                                help="Write filtered annotable file to this location")
+    atfilterparser.add_argument("--include", dest="include",
+                                required=False,
+                                nargs="+",
+                                help="""Optionally, specify one or more strings and/or files listing
+                                strings; only rows containing at least one of these (case sensitive)
+                                in the --columns will be retained in the output""",
+                                default=[])
+    atfilterparser.add_argument("--exclude", dest="exclude",
+                                required=False,
+                                nargs="+",
+                                help="""Optionally, specify one or more strings and/or files listing
+                                strings; rows containing any of these (case sensitive) in the
+                                --columns will be removed from the output; takes precedence over
+                                --include""",
+                                default=[])
+    atfilterparser.add_argument("--columns", dest="columns",
+                                required=False,
+                                nargs="+",
+                                help="""Optionally, specify one or more column headers to limit
+                                --include and --exclude matching to; default == all columns""",
+                                default=[])
+    atfilterparser.add_argument("--evalue", dest="evalue",
+                                required=False,
+                                type=float,
+                                help="""Optionally remove hits with worse than this evalue; rows
+                                are retained even if all their hits are removed""",
+                                default=None)
+    atfilterparser.add_argument("--maxhits", dest="maxhits",
+                                required=False,
+                                type=int,
+                                help="""Optionally filter to maximally this many hits per row;
+                                applied after --evalue""",
+                                default=None)
     
     # Annotable > goseq mode
     atgoseqparser = subAnnotableParsers.add_parser("goseq",
@@ -1232,6 +1277,10 @@ def apmain(args):
 
 def atmain(args):
     # Split into sub-mode-specific functions
+    if args.annotableMode == "filter":
+        print("## Annotable filtering ##")
+        validate_at_filter(args) # sets args.include, args.exclude and args.columns as lists
+        annotable_filter(args)
     if args.annotableMode == "goseq":
         print("## Annotable GO term extraction ##")
         validate_at_goseq(args)

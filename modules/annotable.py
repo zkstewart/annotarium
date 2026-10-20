@@ -6,8 +6,19 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file, GzCapableWriter
 from gff3tarium import GFF3Feature, GFF3Tarium
+from validation import DirectoryNotFoundError
 
 class Annotable:
+    '''
+    Columns in HIT_COLUMNS store one value per BLAST hit, ordered from best to worst and
+    formatted like 'hit1 [hit2][hit3]'. Columns in IDMAPPING_COLUMNS are derived from the
+    best hit which had an ID mapping (as given in 'Best_hit_with_idmapping').
+    '''
+    HIT_COLUMNS = ["Target_accession", "Gene_names", "Taxa_names", "Percentage_identity",
+                   "Alignment_length", "Mismatches", "Gap_opens", "Query_start", "Query_end",
+                   "Target_start", "Target_end", "Expect_value", "Bit_score"]
+    IDMAPPING_COLUMNS = ["Best_hit_with_idmapping", "Best_mapped_GOs", "Best_mapped_GOs_+_parents"]
+    
     def __init__(self, annotableFile, indexCol="#Query"):
         self.annotableFile = annotableFile
         self.df = None
@@ -55,7 +66,8 @@ class Annotable:
     
     def load_annotable(self, annotableFile, indexCol="#Query"):
         with read_gz_file(annotableFile) as fileIn:
-            self.df = pd.read_csv(fileIn, sep="\t", index_col=indexCol)
+            self.df = pd.read_csv(fileIn, sep="\t", index_col=indexCol,
+                                  dtype=str, keep_default_na=False) # retain values exactly as written
     
     def write(self, outputFileName):
         '''
@@ -75,6 +87,101 @@ class Annotable:
         
         with GzCapableWriter(outputFileName) as fileOut:
             self.df.to_csv(fileOut, sep="\t")
+    
+    @staticmethod
+    def split_hits(value, numHits):
+        '''
+        Parameters:
+            value -- a string formatted like 'hit1 [hit2][hit3]', or '.' if there are no hits
+            numHits -- an integer indicating how many hits the value should contain
+        Returns:
+            hits -- a list of strings, one per hit; or None if the value could not be split
+                    into numHits hits
+        '''
+        if numHits == 0:
+            return [] if value == "." else None
+        if numHits == 1:
+            return [value]
+        if not value.endswith("]"):
+            return None
+        
+        # Split from the right, since only the first hit is not enclosed in brackets
+        hits = value[:-1].rsplit("][", maxsplit=numHits-2)
+        firstAndSecond = hits[0].rsplit(" [", maxsplit=1)
+        hits = firstAndSecond + hits[1:]
+        if len(hits) != numHits:
+            return None
+        return hits
+    
+    @staticmethod
+    def join_hits(hits):
+        '''
+        Parameters:
+            hits -- a list of strings, one per hit
+        Returns:
+            value -- a string formatted like 'hit1 [hit2][hit3]', or '.' if there are no hits
+        '''
+        if len(hits) == 0:
+            return "."
+        if len(hits) == 1:
+            return hits[0]
+        return hits[0] + " " + "".join([ f"[{hit}]" for hit in hits[1:] ])
+    
+    def filter_hits(self, evalue=None, maxhits=None):
+        '''
+        Removes hits worse than the evalue cutoff, then retains up to maxhits of the remaining
+        hits. If no hits remain, the row's hit columns are set to '.'; the row is not removed.
+        If the 'Best_hit_with_idmapping' hit is removed, the ID mapping columns are set to '.'.
+        
+        Parameters:
+            evalue -- OPTIONAL; a float of the maximum E-value for a hit to be retained
+            maxhits -- OPTIONAL; an integer of the maximum number of hits to retain
+        Returns:
+            numModified -- an integer indicating how many rows had hits removed
+        '''
+        hitColumns = [ col for col in Annotable.HIT_COLUMNS if col in self.df.columns ]
+        idmappingColumns = [ col for col in Annotable.IDMAPPING_COLUMNS if col in self.df.columns ]
+        colIndex = { col:self.df.columns.get_loc(col) for col in self.df.columns }
+        
+        numModified = 0
+        for rowIndex in range(len(self.df)):
+            rowID = self.df.index[rowIndex]
+            
+            # Split hit columns into their individual hits
+            accessions = self.df.iat[rowIndex, colIndex["Target_accession"]]
+            numHits = 0 if accessions == "." else len(accessions.replace(" ", "").replace("]", "").split("["))
+            rowHits = {}
+            for col in hitColumns:
+                hits = Annotable.split_hits(self.df.iat[rowIndex, colIndex[col]], numHits)
+                if hits == None:
+                    raise ValueError(f"'{rowID}' column '{col}' could not be split into the {numHits} " +
+                                     "hits indicated by its 'Target_accession' column")
+                rowHits[col] = hits
+            
+            # Identify which hits to keep
+            toKeep = list(range(numHits))
+            if evalue != None:
+                toKeep = [ i for i in toKeep if float(rowHits["Expect_value"][i]) <= evalue ]
+            if maxhits != None:
+                toKeep = toKeep[:maxhits]
+            if len(toKeep) == numHits:
+                continue
+            numModified += 1
+            
+            # Update hit columns
+            for col in hitColumns:
+                self.df.iat[rowIndex, colIndex[col]] = Annotable.join_hits([ rowHits[col][i] for i in toKeep ])
+            if toKeep == [] and "Source" in colIndex:
+                self.df.iat[rowIndex, colIndex["Source"]] = "."
+            
+            # Update ID mapping columns if their hit was removed
+            if "Best_hit_with_idmapping" in colIndex:
+                keptAccessions = [ rowHits["Target_accession"][i] for i in toKeep ]
+                if not self.df.iat[rowIndex, colIndex["Best_hit_with_idmapping"]] in keptAccessions:
+                    for col in idmappingColumns:
+                        self.df.iat[rowIndex, colIndex[col]] = "."
+        
+        return numModified
     
     def __delitem__(self, key):
         if not key in self:
@@ -158,3 +265,42 @@ def annotable_goseq(args):
     # Write to file
     with GzCapableWriter(args.outputFileName) as fileOut:
         gos.to_csv(fileOut, sep="\t", header=False)
+
+def annotable_filter(args):
+    '''
+    Hits are filtered first by --evalue and --maxhits, such that --include and --exclude
+    are only matched against the values that remain.
+    
+    Parameters:
+        args.columns -- a list of column headers to search for --include and --exclude strings
+        args.include -- a list of strings; if non-empty, only rows containing at least
+                        one of these strings are retained
+        args.exclude -- a list of strings; rows containing any of these strings are
+                        removed (takes precedence over args.include)
+    '''
+    annotable = Annotable(args.annotableFile)
+    
+    # Filter hits within each row
+    if args.evalue != None or args.maxhits != None:
+        numModified = annotable.filter_hits(evalue=args.evalue, maxhits=args.maxhits)
+        print(f"# {numModified} row(s) had hits removed by --evalue and/or --maxhits")
+    
+    # Filter rows by string matching
+    if args.include != [] or args.exclude != []:
+        searchIndex = annotable.df.index.name in args.columns
+        searchColumns = [ col for col in args.columns if col != annotable.df.index.name ]
+        
+        toKeep = []
+        for rowID, row in annotable.df[searchColumns].iterrows():
+            searchValues = ([rowID] if searchIndex else []) + row.tolist()
+            if args.include != [] and not any([ x in value for x in args.include for value in searchValues ]):
+                continue
+            if any([ x in value for x in args.exclude for value in searchValues ]):
+                continue
+            toKeep.append(rowID)
+        
+        print(f"# {len(toKeep)} of {len(annotable)} row(s) retained by --include and/or --exclude")
+        annotable.df = annotable.df.loc[toKeep]
+    
+    # Write to file
+    annotable.write(args.outputFileName)
