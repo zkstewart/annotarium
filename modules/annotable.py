@@ -209,6 +209,12 @@ class Annotable:
             self.ncol
         )
 
+def annotable_ids(args):
+    annotable = Annotable(args.annotableFile)
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for rowID in annotable.rowNames:
+            fileOut.write(f"{rowID}\n")
+
 def annotable_tx2gene(args):
     # Parse annotable
     annotable = Annotable(args.annotableFile)

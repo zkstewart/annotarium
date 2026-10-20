@@ -550,5 +550,25 @@ class TestAnnotableFilter(unittest.TestCase):
             self.assertNotEqual(returncode, 0)
             self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
 
+class TestAnnotableIds(unittest.TestCase):
+    def test_ids(self):
+        "Test that 'annotable ids' writes the first column without its header"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            outputFile = os.path.join(tmpDir, "ids.txt")
+            cmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "annotable", "ids",
+                "-i", annotableFile,
+                "-o", outputFile
+            ]
+            
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+            
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            with open(outputFile) as fileIn:
+                self.assertEqual(fileIn.read(), "gene1\ngene2\ngene3\ngene4\n")
+
 if __name__ == '__main__':
     unittest.main()

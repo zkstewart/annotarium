@@ -98,6 +98,12 @@ def validate_at_goseq(args):
     if args.nullCharacter == "":
         raise ValueError(f"--null must be given a non-empty value")
 
+def validate_at_ids(args):
+    '''
+    Validation for arguments used in "annotable ids" mode.
+    '''
+    pass # no specific validation needed for this mode
+
 def validate_at_tx2gene(args):
     '''
     Validation for arguments used in "annotable tx2gene" mode.
