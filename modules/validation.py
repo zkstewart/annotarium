@@ -31,6 +31,67 @@ def validate_ap(args):
     '''
     pass # not yet implemented
 
+def validate_as(args):
+    '''
+    Validation for arguments common to all "assembly" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_as_phase(args):
+    '''
+    Validation for arguments used in "assembly phase" mode.
+    '''
+    # Validate input files
+    for inputFile in args.inputFiles:
+        if not os.path.isfile(inputFile):
+            raise FileNotFoundError(f"Input FASTA file (-i {inputFile}) does not exist!")
+    args.inputFiles = [ os.path.abspath(inputFile) for inputFile in args.inputFiles ]
+    if len(set(args.inputFiles)) != len(args.inputFiles):
+        raise ValueError("The same file was given more than once to -i")
+
+    args.referenceFile = os.path.abspath(args.referenceFile)
+    if not os.path.isfile(args.referenceFile):
+        raise FileNotFoundError(f"Reference FASTA file (-r {args.referenceFile}) does not exist!")
+
+    # Validate minimap2 executable
+    if args.minimap2 == None:
+        args.minimap2 = shutil.which("minimap2")
+        if args.minimap2 == None:
+            raise FileNotFoundError("minimap2 is not discoverable in your system PATH and --minimap2 was not specified")
+    else:
+        args.minimap2 = os.path.abspath(args.minimap2)
+        if not os.path.isfile(args.minimap2):
+            raise FileNotFoundError(f"minimap2 executable (--minimap2 {args.minimap2}) does not exist!")
+
+    # Validate numeric arguments
+    if args.ploidy < 1:
+        raise ValueError("--ploidy must be >= 1")
+    if args.minQ < 0:
+        raise ValueError("--minQ must be >= 0")
+    if args.minAlignLen < 0:
+        raise ValueError("--minAlignLen must be >= 0")
+    if args.overlapPenalty < 0:
+        raise ValueError("--penalty must be >= 0")
+    if args.threads < 1:
+        raise ValueError("--threads must be >= 1")
+
+    # Validate output directory and files
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
+    if not os.path.isdir(args.outputDirectory):
+        os.makedirs(args.outputDirectory)
+        print(f"# Output directory '{args.outputDirectory}' has been created as part of argument validation")
+
+    args.pafFile = os.path.join(args.outputDirectory, "minimap2.paf")
+    if os.path.exists(args.pafFile) and not os.path.exists(args.pafFile + ".ok"):
+        raise FileExistsError(f"Alignment file '{args.pafFile}' exists but has no '.ok' flag, so it may be " +
+                              "incomplete; delete it so the alignment can be re-run")
+
+    args.outputFileName = os.path.join(args.outputDirectory, "phasing.tsv")
+    args.coverageFileName = os.path.join(args.outputDirectory, "coverage.tsv")
+    for outputFile in [args.outputFileName, args.coverageFileName]:
+        if os.path.exists(outputFile):
+            raise FileExistsError(f"Output file '{outputFile}' already exists!")
+
 def validate_at(args):
     '''
     Validation for arguments common to all "annotable" mode commands.

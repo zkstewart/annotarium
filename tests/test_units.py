@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 
-import os, re, sys, unittest, shutil, subprocess, tempfile
+import os, random, re, sys, unittest, shutil, subprocess, tempfile
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.fasta import FASTATarium, Sequence
 from modules.msa import MAFFT
 from modules.annotable import Annotable
+from modules.minimap2 import parse_paf
+from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
+    build_footprints, unique_coverage, group_coverage
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 dataDir = os.path.join(baseDir, "tests", "data")
 codonIndelsFile = os.path.join(dataDir, "codon_indels.fasta")
 annotableFile = os.path.join(dataDir, "annotable.tsv")
+pafFile = os.path.join(dataDir, "phasing.paf")
 
 MAFFT_EXE = shutil.which("mafft")
+MINIMAP2_EXE = shutil.which("minimap2")
 
 # Define utility functions
 def run_subprocess(command):
@@ -48,6 +53,51 @@ def run_annotable_filter(outputFile, *filterArgs):
         *filterArgs
     ]
     return run_subprocess(cmd)
+
+def write_phasing_inputs(tmpDir):
+    '''
+    Writes a random reference with two chromosomes, and contigs from two haplotypes that
+    each carry SNPs relative to the reference. Haplotype 'A' has one contig per chromosome,
+    whereas haplotype 'B' has chromosome 1 broken into two contigs.
+
+    Returns:
+        referenceFile -- a string indicating the location of the reference FASTA
+        contigsFile -- a string indicating the location of the contigs FASTA
+    '''
+    rng = random.Random(1)
+    def mutate(sequence, rate):
+        return "".join([ rng.choice("ACGT".replace(x, "")) if rng.random() < rate else x for x in sequence ])
+
+    reference = { chrom: "".join(rng.choices("ACGT", k=60000)) for chrom in ["chr1", "chr2"] }
+    hapA = { chrom: mutate(sequence, 0.005) for chrom, sequence in reference.items() }
+    hapB = { chrom: mutate(sequence, 0.005) for chrom, sequence in reference.items() }
+    contigs = {
+        "A_chr1": hapA["chr1"],
+        "A_chr2": hapA["chr2"],
+        "B_chr1_left": hapB["chr1"][:35000],
+        "B_chr1_right": hapB["chr1"][35000:],
+        "B_chr2": hapB["chr2"]
+    }
+
+    referenceFile = os.path.join(tmpDir, "reference.fasta")
+    with open(referenceFile, "w") as fileOut:
+        for chrom, sequence in reference.items():
+            fileOut.write(f">{chrom}\n{sequence}\n")
+    contigsFile = os.path.join(tmpDir, "contigs.fasta")
+    with open(contigsFile, "w") as fileOut:
+        for contig, sequence in contigs.items():
+            fileOut.write(f">{contig}\n{sequence}\n")
+    return referenceFile, contigsFile
+
+def parse_phasing_tsv(phasingFile):
+    '''
+    Returns:
+        phasing -- a dictionary where keys are contig IDs and values are dictionaries
+                   of that contig's column values
+    '''
+    with open(phasingFile, "r") as fileIn:
+        header = fileIn.readline().lstrip("#").rstrip("\n").split("\t")
+        return { sl[0]: dict(zip(header, sl)) for sl in [ line.rstrip("\n").split("\t") for line in fileIn ] }
 
 def gaps_are_codon_aligned(sequence):
     '''
@@ -569,6 +619,249 @@ class TestAnnotableIds(unittest.TestCase):
             self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
             with open(outputFile) as fileIn:
                 self.assertEqual(fileIn.read(), "gene1\ngene2\ngene3\ngene4\n")
+
+class TestPhasingIntervals(unittest.TestCase):
+    def test_merge_intervals(self):
+        "Test that overlapping and abutting intervals are merged"
+        # Arrange
+        intervals = [(50, 60), (0, 10), (5, 20), (20, 30)]
+
+        # Act
+        merged = merge_intervals(intervals)
+
+        # Assert
+        self.assertEqual(merged, [(0, 30), (50, 60)])
+
+    def test_parse_paf_filters(self):
+        "Test that PAF parsing skips secondary, low MAPQ, and short alignments"
+        # Act
+        alignments = parse_paf(pafFile, minQ=1, minAlignLen=10000)
+
+        # Assert
+        self.assertEqual(alignments, {
+            "q1": [(0, 20000, "chr1", 1000, 21000)],
+            "q2": [(5000, 30000, "chr1", 55000, 80000)]
+        })
+
+    def test_parse_paf_secondary(self):
+        "Test that secondary alignments are skipped even without other filters"
+        # Act
+        alignments = parse_paf(pafFile)
+
+        # Assert
+        self.assertEqual(len(alignments["q1"]), 2)
+        self.assertFalse(any([ aln[2] == "chr2" and aln[3] == 5000 for aln in alignments["q1"] ]))
+
+    def test_deduplicate_query(self):
+        "Test that a query region aligning to multiple reference regions only keeps the longest"
+        # Arrange
+        alignments = { "q1": [
+            (0, 10000, "chr1", 0, 10000),
+            (0, 8000, "chr2", 0, 8000), # entirely within the first alignment's query region
+            (9000, 20000, "chr3", 0, 11000) # mostly outside the first alignment's query region
+        ]}
+
+        # Act
+        dedupAlignments = deduplicate_query(alignments)
+
+        # Assert
+        self.assertEqual(sorted([ aln[2] for aln in dedupAlignments["q1"] ]), ["chr1", "chr3"])
+
+    def test_build_footprints(self):
+        "Test that footprints are merged per reference contig"
+        # Arrange
+        alignments = { "q1": [
+            (0, 1000, "chr1", 0, 1000),
+            (1000, 2000, "chr1", 900, 1900),
+            (2000, 3000, "chr2", 500, 1500)
+        ]}
+
+        # Act
+        footprints = build_footprints(alignments)
+
+        # Assert
+        self.assertEqual(footprints, { "q1": { "chr1": [(0, 1900)], "chr2": [(500, 1500)] } })
+
+class TestHaplotypePartitioner(unittest.TestCase):
+    def test_diploid_partition(self):
+        "Test that overlapping contigs are split into separate partitions"
+        # Arrange
+        footprints = {
+            "A": { "chr1": [(0, 1000)] },
+            "B1": { "chr1": [(0, 600)] },
+            "B2": { "chr1": [(600, 1000)] }
+        }
+
+        # Act
+        states = HaplotypePartitioner(2).partition(footprints)
+
+        # Assert
+        self.assertEqual(states["B1"], states["B2"])
+        self.assertNotEqual(states["A"], states["B1"])
+        self.assertEqual(states["A"], 0, "The partition with most coverage should be the first")
+
+    def test_redundant_unassigned(self):
+        "Test that a contig which only adds redundancy is left unassigned"
+        # Arrange
+        footprints = {
+            "A": { "chr1": [(0, 1000)] },
+            "B": { "chr1": [(0, 1000)] },
+            "dup": { "chr1": [(100, 300)] }
+        }
+
+        # Act
+        states = HaplotypePartitioner(2).partition(footprints)
+
+        # Assert
+        self.assertEqual(sorted([states["A"], states["B"]]), [0, 1])
+        self.assertIsNone(states["dup"])
+
+    def test_haploid_partition(self):
+        "Test that ploidy 1 keeps the contigs giving the most non-redundant coverage"
+        # Arrange
+        footprints = {
+            "A": { "chr1": [(0, 1000)] },
+            "B1": { "chr1": [(0, 300)] },
+            "B2": { "chr1": [(900, 1500)] }
+        }
+
+        # Act
+        states = HaplotypePartitioner(1).partition(footprints)
+
+        # Assert
+        self.assertEqual(states, { "A": 0, "B1": None, "B2": 0 })
+
+    def test_penalty(self):
+        "Test that the penalty controls whether a partially redundant contig is assigned"
+        # Arrange
+        footprints = {
+            "A": { "chr1": [(0, 1000)] },
+            "B": { "chr1": [(800, 1100)] } # 100 bp of new coverage and 200 bp of redundancy
+        }
+
+        # Act
+        lenientStates = HaplotypePartitioner(1, penalty=0.25).partition(footprints)
+        strictStates = HaplotypePartitioner(1, penalty=1.0).partition(footprints)
+
+        # Assert
+        self.assertEqual(lenientStates["B"], 0)
+        self.assertIsNone(strictStates["B"])
+
+    def test_translocated_contig(self):
+        "Test that a contig contributing coverage to two reference contigs is phased with both"
+        # Arrange
+        footprints = {
+            "A_chr1": { "chr1": [(0, 1000)] },
+            "A_chr2": { "chr2": [(0, 1000)] },
+            "B_chr1": { "chr1": [(0, 700)] },
+            "B_trans": { "chr1": [(700, 1000)], "chr2": [(0, 400)] },
+            "B_chr2": { "chr2": [(400, 1000)] }
+        }
+
+        # Act
+        states = HaplotypePartitioner(2).partition(footprints)
+
+        # Assert
+        self.assertEqual(len(set([states["B_chr1"], states["B_trans"], states["B_chr2"]])), 1)
+        self.assertNotEqual(states["B_trans"], states["A_chr1"])
+        self.assertNotEqual(states["B_trans"], states["A_chr2"])
+
+    def test_heuristic_matches_exact(self):
+        "Test that the heuristic search finds the optimal score for random small components"
+        # Arrange
+        rng = random.Random(0)
+        for _ in range(50):
+            footprints = {}
+            for i in range(rng.randint(3, 7)):
+                start = rng.randint(0, 900)
+                footprints[f"c{i}"] = { rng.choice(["chr1", "chr2"]): [(start, start + rng.randint(20, 400))] }
+            partitioner = HaplotypePartitioner(rng.randint(1, 3), penalty=rng.choice([0.5, 1.0, 3.0]))
+            neighbours = partitioner.find_neighbours(footprints)
+
+            for component in partitioner.find_components(neighbours):
+                # Act
+                exactScore = partitioner.score(partitioner._exact(component, footprints), footprints)
+                heuristicScore = partitioner.score(partitioner._heuristic(component, footprints, neighbours), footprints)
+
+                # Assert
+                self.assertAlmostEqual(heuristicScore, exactScore)
+
+    def test_unique_and_group_coverage(self):
+        "Test the calculation of unique and per-partition coverage"
+        # Arrange
+        footprints = {
+            "A1": { "chr1": [(0, 600)] },
+            "A2": { "chr1": [(500, 1000)] },
+            "B": { "chr1": [(0, 1000)], "chr2": [(0, 200)] }
+        }
+        states = { "A1": 0, "A2": 0, "B": 1 }
+
+        # Act
+        uniqueBp = unique_coverage(states, footprints)
+        coverage = group_coverage(states, footprints, 2)
+
+        # Assert
+        self.assertEqual(uniqueBp, { "A1": 500, "A2": 400, "B": 1200 })
+        self.assertEqual(coverage, { "chr1": [1000, 1000], "chr2": [0, 200] })
+
+class TestAssemblyPhase(unittest.TestCase):
+    @unittest.skipIf(MINIMAP2_EXE is None, "minimap2 is not discoverable in the system PATH")
+    def test_assembly_phase(self):
+        "Test the 'assembly phase' command separates haplotypes and reports coverage"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            referenceFile, contigsFile = write_phasing_inputs(tmpDir)
+            outputDir = os.path.join(tmpDir, "phase")
+            cmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "phase",
+                "-i", contigsFile,
+                "-r", referenceFile,
+                "-o", outputDir,
+                "--ploidy", "2",
+                "--minAlignLen", "1000"
+            ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            phasing = parse_phasing_tsv(os.path.join(outputDir, "phasing.tsv"))
+            self.assertTrue(all([ x["status"] == "assigned" for x in phasing.values() ]))
+            self.assertEqual(phasing["B_chr1_left"]["partition"], phasing["B_chr1_right"]["partition"])
+            self.assertNotEqual(phasing["A_chr1"]["partition"], phasing["B_chr1_left"]["partition"])
+            self.assertNotEqual(phasing["A_chr2"]["partition"], phasing["B_chr2"]["partition"])
+
+            with open(os.path.join(outputDir, "coverage.tsv"), "r") as fileIn:
+                fileIn.readline()
+                for line in fileIn:
+                    sl = line.rstrip("\n").split("\t")
+                    self.assertTrue(float(sl[3]) > 95 and float(sl[5]) > 95, f"Expected near-complete coverage but got: {line}")
+
+    @unittest.skipIf(MINIMAP2_EXE is None, "minimap2 is not discoverable in the system PATH")
+    def test_assembly_phase_no_overwrite(self):
+        "Test the 'assembly phase' command refuses to overwrite a previous result"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            referenceFile, contigsFile = write_phasing_inputs(tmpDir)
+            outputDir = os.path.join(tmpDir, "phase")
+            expectedError = "already exists"
+            cmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "phase",
+                "-i", contigsFile,
+                "-r", referenceFile,
+                "-o", outputDir,
+                "--ploidy", "2",
+                "--minAlignLen", "1000"
+            ]
+            run_subprocess(cmd)
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+
+            # Assert
+            self.assertNotEqual(returncode, 0)
+            self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
 
 if __name__ == '__main__':
     unittest.main()

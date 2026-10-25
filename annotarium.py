@@ -21,6 +21,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
+    validate_as, validate_as_phase, \
     validate_at, validate_at_filter, validate_at_goseq, validate_at_ids, validate_at_tx2gene, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
@@ -35,6 +36,7 @@ from modules.validation import validate_ap, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
+from modules.assembly import assembly_phase
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -202,6 +204,72 @@ def main():
     attx2gparser.add_argument("-o", dest="outputFileName",
                               required=True,
                               help="Write modified annotable file to this location")
+    
+    # Assembly subparser
+    asparser = subparsers.add_parser("assembly",
+                                     parents=[p],
+                                     add_help=False,
+                                     help="Genome assembly handling")
+    asparser.set_defaults(func=asmain)
+    
+    subAssemblyParsers = asparser.add_subparsers(dest="assemblyMode",
+                                                 required=True)
+    
+    # Assembly > phase mode
+    asphaseparser = subAssemblyParsers.add_parser("phase",
+                                                  parents=[p],
+                                                  add_help=False,
+                                                  help="Partition contigs into haplotypes using a reference")
+    asphaseparser.add_argument("-i", dest="inputFiles",
+                               required=True,
+                               nargs="+",
+                               help="Location of one or more FASTA files of contigs to phase")
+    asphaseparser.add_argument("-r", dest="referenceFile",
+                               required=True,
+                               help="Location of reference genome FASTA file")
+    asphaseparser.add_argument("-o", dest="outputDirectory",
+                               required=True,
+                               help="Location to write output files")
+    asphaseparser.add_argument("--ploidy", dest="ploidy",
+                               required=True,
+                               type=int,
+                               help="Specify the number of haplotype partitions to optimise for")
+    asphaseparser.add_argument("--minQ", dest="minQ",
+                               required=False,
+                               type=int,
+                               help="""Optionally, specify the minimum MAPQ for an alignment
+                               to be considered; default == 1""",
+                               default=1)
+    asphaseparser.add_argument("--minAlignLen", dest="minAlignLen",
+                               required=False,
+                               type=int,
+                               help="""Optionally, specify the minimum alignment length
+                               to be considered; default == 10000""",
+                               default=10000)
+    asphaseparser.add_argument("--penalty", dest="overlapPenalty",
+                               required=False,
+                               type=float,
+                               help="""Optionally, specify the penalty for redundant reference
+                               coverage within a partition; a contig is only assigned when the new
+                               coverage it adds exceeds penalty * redundant coverage; default == 1.0""",
+                               default=1.0)
+    asphaseparser.add_argument("--preset", dest="preset",
+                               required=False,
+                               choices=["asm5", "asm10", "asm20"],
+                               help="""Optionally, specify the minimap2 preset to use;
+                               default == 'asm20'""",
+                               default="asm20")
+    asphaseparser.add_argument("--threads", dest="threads",
+                               required=False,
+                               type=int,
+                               help="""Optionally, specify the number of threads to use for minimap2;
+                               default == 1""",
+                               default=1)
+    asphaseparser.add_argument("--minimap2", dest="minimap2",
+                               required=False,
+                               help="""Optionally, specify the minimap2 executable file
+                               if it is not discoverable in the path""",
+                               default=None)
     
     # Blast subparser
     bparser = subparsers.add_parser("blast",
@@ -1233,6 +1301,10 @@ def main():
         print("## annotarium.py - Annotation table handling ##")
         validate_at(args)
         atmain(args)
+    if args.mode == "assembly":
+        print("## annotarium.py - Genome assembly handling ##")
+        validate_as(args)
+        asmain(args)
     if args.mode == "blast":
         print("## annotarium.py - BLAST handling ##")
         validate_b(args)
@@ -1305,6 +1377,13 @@ def atmain(args):
         print("## Annotable transcript -> gene collapse ##")
         validate_at_tx2gene(args)
         annotable_tx2gene(args)
+
+def asmain(args):
+    # Split into sub-mode-specific functions
+    if args.assemblyMode == "phase":
+        print("## Assembly contig phasing ##")
+        validate_as_phase(args)
+        assembly_phase(args)
 
 def bmain(args):
     # Split into sub-mode-specific functions
