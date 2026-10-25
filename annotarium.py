@@ -21,7 +21,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
-    validate_as, validate_as_phase, \
+    validate_as, validate_as_phase, validate_as_scaffold, \
     validate_at, validate_at_filter, validate_at_goseq, validate_at_ids, validate_at_tx2gene, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
@@ -36,7 +36,7 @@ from modules.validation import validate_ap, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
-from modules.assembly import assembly_phase
+from modules.assembly import assembly_phase, assembly_scaffold
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -270,6 +270,83 @@ def main():
                                help="""Optionally, specify the minimap2 executable file
                                if it is not discoverable in the path""",
                                default=None)
+    
+    # Assembly > scaffold mode
+    asscaffoldparser = subAssemblyParsers.add_parser("scaffold",
+                                                     parents=[p],
+                                                     add_help=False,
+                                                     help="Scaffold phased partitions with RagTag")
+    asscaffoldparser.add_argument("-i", dest="phasingFile",
+                                  required=True,
+                                  help="Location of 'assembly phase' TSV file")
+    asscaffoldparser.add_argument("-f", dest="fastaFiles",
+                                  required=True,
+                                  nargs="+",
+                                  help="Location of one or more FASTA files of contigs given to 'assembly phase'")
+    asscaffoldparser.add_argument("-r", dest="referenceFile",
+                                  required=True,
+                                  help="Location of reference genome FASTA file")
+    asscaffoldparser.add_argument("-o", dest="outputDirectory",
+                                  required=True,
+                                  help="Location to write output files")
+    asscaffoldparser.add_argument("--multiline", dest="lineLength",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the number of characters per line
+                                  in the output; default == 0 for no multilining""",
+                                  default=0)
+    asscaffoldparser.add_argument("--threads", dest="threads",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the number of threads to use for
+                                  RagTag and minimap2; default == 1""",
+                                  default=1)
+    asscaffoldparser.add_argument("--ragtag", dest="ragtag",
+                                  required=False,
+                                  help="""Optionally, specify the ragtag.py file
+                                  if it is not discoverable in the path""",
+                                  default=None)
+    asscaffoldparser.add_argument("--minimap2", dest="minimap2",
+                                  required=False,
+                                  help="""Optionally, specify the minimap2 executable file
+                                  if it is not discoverable in the path""",
+                                  default=None)
+    asscaffoldparser.add_argument("--paf2dotplot", dest="paf2dotplot",
+                                  required=False,
+                                  help="""Optionally, specify the paf2dotplot.r file if it is not
+                                  discoverable in the path; if it cannot be found, dotplots
+                                  of the scaffolded partitions will not be made""",
+                                  default=None)
+    asscaffoldparser.add_argument("--preset", dest="preset",
+                                  required=False,
+                                  choices=["asm5", "asm10", "asm20"],
+                                  help="""Optionally, specify the minimap2 preset to use for
+                                  dotplot alignments; default == 'asm20'""",
+                                  default="asm20")
+    asscaffoldparser.add_argument("--plotSize", dest="plotSize",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the dotplot size in inches;
+                                  default == 15""",
+                                  default=15)
+    asscaffoldparser.add_argument("--minRefLen", dest="minRefLen",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the minimum reference sequence length
+                                  to include in dotplots; default == 1000000""",
+                                  default=1000000)
+    asscaffoldparser.add_argument("--minQueryLen", dest="minQueryLen",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the minimum query sequence length
+                                  to include in dotplots; default == 400000""",
+                                  default=400000)
+    asscaffoldparser.add_argument("--minPlotAlignLen", dest="minPlotAlignLen",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the minimum alignment length
+                                  to include in dotplots; default == 10000""",
+                                  default=10000)
     
     # Blast subparser
     bparser = subparsers.add_parser("blast",
@@ -1384,6 +1461,10 @@ def asmain(args):
         print("## Assembly contig phasing ##")
         validate_as_phase(args)
         assembly_phase(args)
+    if args.assemblyMode == "scaffold":
+        print("## Assembly partition scaffolding ##")
+        validate_as_scaffold(args) # sets args.partitions and args.partitionPaths
+        assembly_scaffold(args)
 
 def bmain(args):
     # Split into sub-mode-specific functions

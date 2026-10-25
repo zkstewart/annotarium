@@ -18,7 +18,8 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import read_gz_file
 from fasta import FASTATarium
-from minimap2 import Minimap2, parse_paf
+from minimap2 import Minimap2, Paf2dotplot, parse_paf
+from ragtag import RagTag
 from phasing import HaplotypePartitioner, deduplicate_query, build_footprints, unique_coverage, group_coverage
 
 def get_fasta_lengths(fastaFiles):
@@ -130,3 +131,77 @@ def assembly_phase(args):
     print("# Contigs per partition: " + ", ".join([ f"{name}={num}" for name, num in zip(partitionNames, numAssigned) ]))
     print(f"# {numRedundant} redundant contig(s) were left unassigned")
     print(f"# {numUnaligned} contig(s) had no qualifying alignments and were left unassigned")
+
+# assembly > scaffold
+def assembly_scaffold(args):
+    '''
+    Parameters:
+        args.partitions -- a dictionary as produced by parsing.parse_phasing_tsv()
+        args.partitionPaths -- a dictionary where keys are partition labels and values are
+                               dictionaries of file locations used for that partition
+        args.fastaFiles -- a list of contig FASTA file locations
+        args.referenceFile -- a string of the reference FASTA file location
+        args.paf2dotplot -- a string of the paf2dotplot.r file location, or None to skip dotplotting
+    '''
+    # Make sure all assigned contigs can be found
+    contigLengths = get_fasta_lengths(args.fastaFiles)
+    missingIDs = [ contigID for contigs in args.partitions.values() for contigID in contigs if not contigID in contigLengths ]
+    if missingIDs != []:
+        raise ValueError(f"{len(missingIDs)} contig(s) in the phasing TSV were not found in the -f FASTA file(s), " +
+                         f"such as '{missingIDs[0]}'; were they the same files given to 'assembly phase'?")
+
+    # Write each partition's contigs to file, skipping those that were already scaffolded
+    toWrite = { partition: paths for partition, paths in args.partitionPaths.items() if not os.path.exists(paths["flag"]) }
+    contigToPartition = { contigID: partition for partition in toWrite for contigID in args.partitions[partition] }
+    if toWrite != {}:
+        fileOuts = {}
+        try:
+            for partition, paths in toWrite.items():
+                os.makedirs(paths["workDir"])
+                fileOuts[partition] = open(os.path.join(paths["workDir"], "contigs.fasta"), "w")
+            for fastaFile in args.fastaFiles:
+                with read_gz_file(fastaFile) as fileIn:
+                    for record in FASTATarium.fasta_parser(fileIn):
+                        if record.id in contigToPartition:
+                            fileOuts[contigToPartition[record.id]].write(record.format())
+        finally:
+            for fileOut in fileOuts.values():
+                fileOut.close()
+
+    # Scaffold each partition with RagTag
+    scaffolder = RagTag(args.ragtag, minimap2Path=args.minimap2, threads=args.threads)
+    for partition, paths in args.partitionPaths.items():
+        name = f"partition{partition}"
+        ragtagDir = os.path.join(paths["workDir"], "ragtag")
+        if os.path.exists(paths["flag"]):
+            print(f"# Reusing existing RagTag scaffolding of {name}")
+        else:
+            print(f"# Running RagTag scaffolding of {name}...")
+            scaffolder.scaffold(args.referenceFile, os.path.join(paths["workDir"], "contigs.fasta"), ragtagDir)
+            open(paths["flag"], "w").close()
+
+        # Write scaffolds without the RagTag suffix
+        RagTag.rename_scaffolds(os.path.join(ragtagDir, "ragtag.scaffold.fasta"), paths["fasta"],
+                                lineLength=args.lineLength)
+
+        # Report on how contigs were scaffolded
+        scaffolds, placed = RagTag.parse_agp(os.path.join(ragtagDir, "ragtag.scaffold.agp"))
+        numPlaced = sum([ len(scaffolds[scaffoldID]) for scaffoldID in placed ])
+        unplaced = [ scaffoldID for scaffoldID in scaffolds if not scaffoldID in placed ]
+        print(f"# {name}: {numPlaced} contig(s) placed into {len(placed)} scaffold(s); " +
+              f"{len(unplaced)} contig(s) left unplaced")
+        for scaffoldID in scaffolds:
+            if scaffoldID in placed:
+                print(f"#   {scaffoldID}: {', '.join(scaffolds[scaffoldID])}")
+        if unplaced != []:
+            print(f"#   unplaced: {', '.join(unplaced)}")
+
+    # Generate dotplots of each scaffolded partition against the reference
+    if args.paf2dotplot != None:
+        aligner = Minimap2(args.minimap2, preset=args.preset, threads=args.threads)
+        plotter = Paf2dotplot(args.paf2dotplot, plotSize=args.plotSize, minRefLen=args.minRefLen,
+                              minQueryLen=args.minQueryLen, minAlignLen=args.minPlotAlignLen)
+        for partition, paths in args.partitionPaths.items():
+            print(f"# Generating dotplot of partition{partition}...")
+            aligner.align(args.referenceFile, [paths["fasta"]], paths["paf"])
+            plotter.plot(paths["paf"], paths["plotPrefix"])

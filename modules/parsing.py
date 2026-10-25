@@ -130,6 +130,36 @@ def parse_list_file(fileName):
                 listedValues.append(l)
     return listedValues
 
+def parse_phasing_tsv(fileName):
+    '''
+    Parses the TSV file produced by 'assembly phase' to obtain the contigs assigned
+    to each partition.
+    
+    Returns:
+        partitions -- a dictionary where keys are partition labels (e.g., '1', '2') in
+                      numeric order, and values are lists of contig IDs in file order
+    '''
+    EXPECTED_HEADER = ["#contig", "length", "partition", "status"]
+    
+    partitions = {}
+    with read_gz_file(fileName) as fileIn:
+        header = fileIn.readline().rstrip("\r\n").split("\t")
+        if header[0:len(EXPECTED_HEADER)] != EXPECTED_HEADER:
+            raise ValueError(f"'{fileName}' does not have the header expected of an 'assembly phase' TSV " +
+                             f"(beginning with {EXPECTED_HEADER})")
+        
+        for line in fileIn:
+            sl = line.rstrip("\r\n").split("\t")
+            if sl == [""]:
+                continue
+            contigID, length, partition, status = sl[0:4]
+            if status == "assigned":
+                if not partition.isdigit():
+                    raise ValueError(f"'{contigID}' in '{fileName}' is assigned to an invalid partition '{partition}'")
+                partitions.setdefault(partition, []).append(contigID)
+    
+    return { partition: partitions[partition] for partition in sorted(partitions, key=int) }
+
 def parse_fasta_to_lengths(fastaFile):
     '''
     Returns:

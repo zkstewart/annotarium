@@ -17,7 +17,7 @@ import os, re, shutil, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
-    parse_gff3_regions, parse_fasta_regions
+    parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -106,6 +106,100 @@ def validate_as_phase(args):
     for outputFile in [args.outputFileName, args.coverageFileName]:
         if os.path.exists(outputFile):
             raise FileExistsError(f"Output file '{outputFile}' already exists!")
+
+def validate_as_scaffold(args):
+    '''
+    Validation for arguments used in "assembly scaffold" mode.
+    '''
+    # Validate input files
+    args.phasingFile = os.path.abspath(args.phasingFile)
+    if not os.path.isfile(args.phasingFile):
+        raise FileNotFoundError(f"Phasing TSV file (-i {args.phasingFile}) does not exist!")
+    args.partitions = parse_phasing_tsv(args.phasingFile)
+    if args.partitions == {}:
+        raise ValueError(f"No contigs are assigned to a partition in the phasing TSV (-i {args.phasingFile})")
+    
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            raise FileNotFoundError(f"Contig FASTA file (-f {fastaFile}) does not exist!")
+    args.fastaFiles = [ os.path.abspath(fastaFile) for fastaFile in args.fastaFiles ]
+    if len(set(args.fastaFiles)) != len(args.fastaFiles):
+        raise ValueError("The same file was given more than once to -f")
+    
+    args.referenceFile = os.path.abspath(args.referenceFile)
+    if not os.path.isfile(args.referenceFile):
+        raise FileNotFoundError(f"Reference FASTA file (-r {args.referenceFile}) does not exist!")
+    
+    # Validate program executables
+    if args.ragtag == None:
+        args.ragtag = shutil.which("ragtag.py")
+        if args.ragtag == None:
+            raise FileNotFoundError("ragtag.py is not discoverable in your system PATH and --ragtag was not specified")
+    else:
+        args.ragtag = os.path.abspath(args.ragtag)
+        if not os.path.isfile(args.ragtag):
+            raise FileNotFoundError(f"ragtag.py file (--ragtag {args.ragtag}) does not exist!")
+    
+    if args.minimap2 == None:
+        args.minimap2 = shutil.which("minimap2")
+        if args.minimap2 == None:
+            raise FileNotFoundError("minimap2 is not discoverable in your system PATH and --minimap2 was not specified")
+    else:
+        args.minimap2 = os.path.abspath(args.minimap2)
+        if not os.path.isfile(args.minimap2):
+            raise FileNotFoundError(f"minimap2 executable (--minimap2 {args.minimap2}) does not exist!")
+    
+    if args.paf2dotplot == None:
+        args.paf2dotplot = shutil.which("paf2dotplot.r")
+        if args.paf2dotplot == None:
+            print("# WARNING: paf2dotplot.r is not discoverable in your system PATH and --paf2dotplot was not " +
+                  "specified; dotplots of the scaffolded partitions will not be generated")
+    else:
+        args.paf2dotplot = os.path.abspath(args.paf2dotplot)
+        if not os.path.isfile(args.paf2dotplot):
+            raise FileNotFoundError(f"paf2dotplot.r file (--paf2dotplot {args.paf2dotplot}) does not exist!")
+    
+    # Validate numeric arguments
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+    args.lineLength = args.lineLength if args.lineLength > 0 else None
+    if args.threads < 1:
+        raise ValueError("--threads must be >= 1")
+    if args.plotSize < 1:
+        raise ValueError("--plotSize must be >= 1")
+    for value, flag in [(args.minRefLen, "--minRefLen"), (args.minQueryLen, "--minQueryLen"),
+                        (args.minPlotAlignLen, "--minPlotAlignLen")]:
+        if value < 0:
+            raise ValueError(f"{flag} must be >= 0")
+    
+    # Validate output directory and files
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
+    if not os.path.isdir(args.outputDirectory):
+        os.makedirs(args.outputDirectory)
+        print(f"# Output directory '{args.outputDirectory}' has been created as part of argument validation")
+    
+    args.partitionPaths = {}
+    for partition in args.partitions:
+        name = f"partition{partition}"
+        paths = {
+            "workDir": os.path.join(args.outputDirectory, name),
+            "flag": os.path.join(args.outputDirectory, f"{name}.ragtag.ok"),
+            "fasta": os.path.join(args.outputDirectory, f"{name}.fasta"),
+            "paf": os.path.join(args.outputDirectory, f"{name}.dotplot.paf"),
+            "plotPrefix": os.path.join(args.outputDirectory, f"{name}.dotplot")
+        }
+        args.partitionPaths[partition] = paths
+        
+        if os.path.exists(paths["workDir"]) and not os.path.exists(paths["flag"]):
+            raise FileExistsError(f"Working directory '{paths['workDir']}' exists but has no '.ok' flag, so " +
+                                  "RagTag may not have completed; delete it so scaffolding can be re-run")
+        
+        outputFiles = [paths["fasta"]]
+        if args.paf2dotplot != None:
+            outputFiles += [paths["paf"], paths["plotPrefix"] + ".pdf", paths["plotPrefix"] + ".png"]
+        for outputFile in outputFiles:
+            if os.path.exists(outputFile):
+                raise FileExistsError(f"Output file '{outputFile}' already exists!")
 
 def validate_at(args):
     '''

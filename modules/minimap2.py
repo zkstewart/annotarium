@@ -115,3 +115,51 @@ def parse_paf(pafFile, minQ=0, minAlignLen=0):
 
             alignments.setdefault(qid, []).append((int(qstart), int(qend), tid, int(tstart), int(tend)))
     return alignments
+
+class Paf2dotplot:
+    '''
+    A wrapper for plotting a PAF file with paf2dotplot (https://github.com/moold/paf2dotplot).
+    Code helpfully adapted from Various_scripts' haplotype_scaffolding_pipeline.py with modification.
+    '''
+    def __init__(self, paf2dotplotPath, plotSize=15, minRefLen=1000000, minQueryLen=400000, minAlignLen=10000):
+        self.exe = paf2dotplotPath
+        self.plotSize = plotSize
+        self.minRefLen = minRefLen
+        self.minQueryLen = minQueryLen
+        self.minAlignLen = minAlignLen
+
+    @property
+    def exe(self):
+        return self._exe
+
+    @exe.setter
+    def exe(self, value):
+        if not os.path.isfile(value):
+            raise FileNotFoundError(f"paf2dotplot.r not found at '{value}'")
+        self._exe = value
+
+    def plot(self, pafFile, outputPrefix):
+        '''
+        Parameters:
+            pafFile -- a string indicating the location of the PAF file to plot
+            outputPrefix -- a string indicating the prefix for output files, to which
+                            paf2dotplot appends '.pdf' and '.png'
+        '''
+        cmd = [
+            self.exe, "-b",
+            f"--plot-size={self.plotSize}",
+            f"--min-ref-len={self.minRefLen}",
+            f"--min-query-length={self.minQueryLen}",
+            f"--min-alignment-length={self.minAlignLen}",
+            "-o", outputPrefix,
+            pafFile
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(("paf2dotplot encountered an error; have a look at the stderr " +
+                                f"({result.stderr}) to make sense of this."))
+
+    def __repr__(self):
+        return "<Paf2dotplot(exe='{0}',plotSize={1},minRefLen={2},minQueryLen={3},minAlignLen={4})>".format(
+            self.exe, self.plotSize, self.minRefLen, self.minQueryLen, self.minAlignLen
+        )

@@ -21,6 +21,8 @@ from modules.fasta import FASTATarium, Sequence
 from modules.msa import MAFFT
 from modules.annotable import Annotable
 from modules.minimap2 import parse_paf
+from modules.parsing import parse_phasing_tsv
+from modules.ragtag import RagTag
 from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
     build_footprints, unique_coverage, group_coverage
 
@@ -30,9 +32,11 @@ dataDir = os.path.join(baseDir, "tests", "data")
 codonIndelsFile = os.path.join(dataDir, "codon_indels.fasta")
 annotableFile = os.path.join(dataDir, "annotable.tsv")
 pafFile = os.path.join(dataDir, "phasing.paf")
+agpFile = os.path.join(dataDir, "ragtag.agp")
 
 MAFFT_EXE = shutil.which("mafft")
 MINIMAP2_EXE = shutil.which("minimap2")
+RAGTAG_EXE = shutil.which("ragtag.py")
 
 # Define utility functions
 def run_subprocess(command):
@@ -103,7 +107,7 @@ def write_phasing_inputs(tmpDir):
             fileOut.write(f">{contig}\n{sequence}\n")
     return referenceFile, contigsFile
 
-def parse_phasing_tsv(phasingFile):
+def parse_phasing_rows(phasingFile):
     '''
     Returns:
         phasing -- a dictionary where keys are contig IDs and values are dictionaries
@@ -840,7 +844,7 @@ class TestAssemblyPhase(unittest.TestCase):
 
             # Assert
             self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
-            phasing = parse_phasing_tsv(os.path.join(outputDir, "phasing.tsv"))
+            phasing = parse_phasing_rows(os.path.join(outputDir, "phasing.tsv"))
             self.assertTrue(all([ x["status"] == "assigned" for x in phasing.values() ]))
             self.assertEqual(phasing["B_chr1_left"]["partition"], phasing["B_chr1_right"]["partition"])
             self.assertNotEqual(phasing["A_chr1"]["partition"], phasing["B_chr1_left"]["partition"])
@@ -876,6 +880,110 @@ class TestAssemblyPhase(unittest.TestCase):
             # Assert
             self.assertNotEqual(returncode, 0)
             self.assertTrue(expectedError in stderr, f"Expected '{expectedError}' in stderr but got: {stderr}")
+
+class TestRagTag(unittest.TestCase):
+    def test_parse_phasing_tsv(self):
+        "Test that only assigned contigs are parsed, grouped by partition in numeric order"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            phasingFile = os.path.join(tmpDir, "phasing.tsv")
+            with open(phasingFile, "w") as fileOut:
+                fileOut.write("#contig\tlength\tpartition\tstatus\taligned_bp\tunique_bp\treference_regions\treference_bp\n")
+                fileOut.write("c1\t100\t10\tassigned\t100\t100\tchr1:1-100\t100\n")
+                fileOut.write("c2\t100\t2\tassigned\t100\t100\tchr1:1-100\t100\n")
+                fileOut.write("c3\t100\t.\tredundant\t100\t0\tchr1:1-100\t100\n")
+                fileOut.write("c4\t100\t.\tunaligned\t0\t0\t.\t.\n")
+                fileOut.write("c5\t100\t2\tassigned\t100\t100\tchr2:1-100\t100\n")
+
+            # Act
+            partitions = parse_phasing_tsv(phasingFile)
+
+            # Assert
+            self.assertEqual(partitions, { "2": ["c2", "c5"], "10": ["c1"] })
+            self.assertEqual(list(partitions), ["2", "10"])
+
+    def test_parse_phasing_tsv_header(self):
+        "Test that a file without the 'assembly phase' header is refused"
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            parse_phasing_tsv(annotableFile)
+
+    def test_parse_agp(self):
+        "Test that AGP parsing groups contigs by scaffold, skipping gaps and recognising unplaced contigs"
+        # Act
+        scaffolds, placed = RagTag.parse_agp(agpFile)
+
+        # Assert
+        self.assertEqual(scaffolds, { "chr1": ["c1", "c2"], "chr2": ["c3"], "c4": ["c4"] })
+        self.assertEqual(placed, {"chr1", "chr2"})
+
+    def test_rename_scaffolds(self):
+        "Test that the RagTag suffix is removed from scaffolds but not unplaced contigs"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            ragtagFile = os.path.join(tmpDir, "ragtag.scaffold.fasta")
+            outputFile = os.path.join(tmpDir, "renamed.fasta")
+            with open(ragtagFile, "w") as fileOut:
+                fileOut.write(">chr1_RagTag\nACGTACGT\n>c4\nTTTT\n")
+
+            # Act
+            RagTag.rename_scaffolds(ragtagFile, outputFile, lineLength=3)
+
+            # Assert
+            with open(outputFile, "r") as fileIn:
+                self.assertEqual(fileIn.read(), ">chr1\nACG\nTAC\nGT\n>c4\nTTT\nT\n")
+
+    def test_rename_scaffolds_collision(self):
+        "Test that renaming is refused if it would cause duplicate IDs, without writing output"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            ragtagFile = os.path.join(tmpDir, "ragtag.scaffold.fasta")
+            outputFile = os.path.join(tmpDir, "renamed.fasta")
+            with open(ragtagFile, "w") as fileOut:
+                fileOut.write(">chr1_RagTag\nACGT\n>chr1\nTTTT\n")
+
+            # Act & Assert
+            with self.assertRaises(ValueError):
+                RagTag.rename_scaffolds(ragtagFile, outputFile)
+            self.assertFalse(os.path.exists(outputFile), "No output file should be written")
+
+class TestAssemblyScaffold(unittest.TestCase):
+    @unittest.skipIf(MINIMAP2_EXE is None or RAGTAG_EXE is None,
+                     "minimap2 and/or ragtag.py are not discoverable in the system PATH")
+    def test_assembly_scaffold(self):
+        "Test the 'assembly scaffold' command produces one scaffolded FASTA per partition"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            referenceFile, contigsFile = write_phasing_inputs(tmpDir)
+            phaseDir = os.path.join(tmpDir, "phase")
+            scaffoldDir = os.path.join(tmpDir, "scaffold")
+            phaseCmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "phase",
+                "-i", contigsFile,
+                "-r", referenceFile,
+                "-o", phaseDir,
+                "--ploidy", "2",
+                "--minAlignLen", "1000"
+            ]
+            scaffoldCmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "scaffold",
+                "-i", os.path.join(phaseDir, "phasing.tsv"),
+                "-f", contigsFile,
+                "-r", referenceFile,
+                "-o", scaffoldDir
+            ]
+            returncode, stdout, stderr = run_subprocess(phaseCmd)
+            self.assertEqual(returncode, 0, f"Expected no error from 'assembly phase' but got: {stderr}")
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(scaffoldCmd)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            for partition in ["1", "2"]:
+                records = parse_fasta(os.path.join(scaffoldDir, f"partition{partition}.fasta"))
+                self.assertEqual(sorted([ record.id for record in records ]), ["chr1", "chr2"])
+                self.assertTrue(all([ len(record) >= 59000 for record in records ]))
 
 if __name__ == '__main__':
     unittest.main()
