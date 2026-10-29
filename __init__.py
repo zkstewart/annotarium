@@ -6,3 +6,4 @@ from modules.domains import Domains
 from modules.coordinates import OverlapResolver
 from modules.gff3tarium import GFF3Feature, GFF3Tarium
 from modules.fasta import TranslationTable, Sequence, Records, FASTATarium
+from modules.annotable import Annotable
