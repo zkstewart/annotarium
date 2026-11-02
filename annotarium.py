@@ -21,7 +21,7 @@ import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.validation import validate_ap, \
-    validate_as, validate_as_phase, validate_as_scaffold, \
+    validate_as, validate_as_homology_pair, validate_as_phase, validate_as_scaffold, \
     validate_at, validate_at_filter, validate_at_goseq, validate_at_ids, validate_at_tx2gene, \
     validate_b, validate_b_tx2gene, validate_b_filter, validate_b_to, validate_b_to_homologs, \
     validate_c, validate_c_reformat, \
@@ -36,7 +36,7 @@ from modules.validation import validate_ap, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
-from modules.assembly import assembly_phase, assembly_scaffold
+from modules.assembly import assembly_homology_pair, assembly_phase, assembly_scaffold
 from modules.blast import blast_filter, blast_tx2gene, blast_to_homologs
 from modules.clustering import cluster_reformat
 from modules.domains import domains_resolve
@@ -214,6 +214,40 @@ def main():
     
     subAssemblyParsers = asparser.add_subparsers(dest="assemblyMode",
                                                  required=True)
+    
+    # Assembly > homology_pair mode
+    ashomologyparser = subAssemblyParsers.add_parser("homology_pair",
+                                                     parents=[p],
+                                                     add_help=False,
+                                                     help="Pair and orient contigs 1:1 with reference contigs")
+    ashomologyparser.add_argument("-i", dest="phasingFile",
+                                  required=True,
+                                  help="Location of 'assembly phase' TSV file")
+    ashomologyparser.add_argument("-f", dest="fastaFiles",
+                                  required=True,
+                                  nargs="+",
+                                  help="Location of one or more FASTA files of contigs given to 'assembly phase'")
+    ashomologyparser.add_argument("-r", dest="referenceFile",
+                                  required=False,
+                                  help="""Optionally, specify the location of the reference genome FASTA
+                                  given to 'assembly phase' to write output in its order; default ==
+                                  write output in the order of the -f file(s)""",
+                                  default=None)
+    ashomologyparser.add_argument("-o", dest="outputFileName",
+                                  required=True,
+                                  help="Location to write paired FASTA file")
+    ashomologyparser.add_argument("--partition", dest="partition",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify a single partition to pair contigs from;
+                                  default == pair contigs from all partitions""",
+                                  default=None)
+    ashomologyparser.add_argument("--multiline", dest="lineLength",
+                                  required=False,
+                                  type=int,
+                                  help="""Optionally, specify the number of characters per line
+                                  in the output; default == 0 for no multilining""",
+                                  default=0)
     
     # Assembly > phase mode
     asphaseparser = subAssemblyParsers.add_parser("phase",
@@ -1457,6 +1491,10 @@ def atmain(args):
 
 def asmain(args):
     # Split into sub-mode-specific functions
+    if args.assemblyMode == "homology_pair":
+        print("## Assembly homologous contig pairing ##")
+        validate_as_homology_pair(args) # sets args.matches
+        assembly_homology_pair(args)
     if args.assemblyMode == "phase":
         print("## Assembly contig phasing ##")
         validate_as_phase(args)

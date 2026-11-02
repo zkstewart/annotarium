@@ -16,11 +16,12 @@
 import os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import read_gz_file
-from fasta import FASTATarium
+from parsing import read_gz_file, GzCapableWriter
+from fasta import FASTATarium, Sequence
 from minimap2 import Minimap2, Paf2dotplot, parse_paf
 from ragtag import RagTag
-from phasing import HaplotypePartitioner, deduplicate_query, build_footprints, unique_coverage, group_coverage
+from phasing import HaplotypePartitioner, deduplicate_query, build_footprints, infer_orientations, \
+    unique_coverage, group_coverage, pair_homologous_contigs
 
 def get_fasta_lengths(fastaFiles):
     '''
@@ -40,20 +41,88 @@ def get_fasta_lengths(fastaFiles):
                 lengthsDict[record.id] = len(record)
     return lengthsDict
 
-def format_regions(footprint):
+def format_regions(footprint, orientation):
     '''
     Parameters:
         footprint -- a dictionary where keys are reference contig IDs and values are lists
                      of merged (start, end) intervals
+        orientation -- a dictionary where keys are reference contig IDs and values are
+                       '+' or '-' strings
     Returns:
         regions -- a comma-separated string of 'tid:start-end' spans (1-based, inclusive)
                    ordered by the number of aligned bases, most first
         alignedBp -- a comma-separated string of the aligned bases in the same order
+        strands -- a comma-separated string of the orientations in the same order
     '''
     alignedBp = { tid: sum([ end - start for start, end in intervals ]) for tid, intervals in footprint.items() }
     order = sorted(footprint, key=lambda tid: (-alignedBp[tid], tid))
     regions = ",".join([ f"{tid}:{footprint[tid][0][0]+1}-{footprint[tid][-1][1]}" for tid in order ])
-    return regions, ",".join([ str(alignedBp[tid]) for tid in order ])
+    return regions, ",".join([ str(alignedBp[tid]) for tid in order ]), ",".join([ orientation[tid] for tid in order ])
+
+# assembly > homology_pair
+def assembly_homology_pair(args):
+    '''
+    Parameters:
+        args.matches -- a dictionary as produced by parsing.parse_phasing_matches()
+        args.fastaFiles -- a list of contig FASTA file locations
+        args.outputFileName -- a string of where to write the paired FASTA
+        args.lineLength -- an integer of characters per line, or None for no multilining
+        args.referenceFile -- a string of the reference FASTA file location to order output
+                              by, or None to write output in the -f file order
+    '''
+    pairs, unpaired = pair_homologous_contigs(args.matches)
+    contigToPair = { pair["contig"]: pair for pair in pairs.values() }
+
+    # Make sure all paired reference contigs are in the reference, if given
+    if args.referenceFile != None:
+        refOrder = { refID: index for index, refID in enumerate(get_fasta_lengths([args.referenceFile])) }
+        missingIDs = [ reference for reference in pairs if not reference in refOrder ]
+        if missingIDs != []:
+            raise ValueError(f"{len(missingIDs)} reference contig(s) in the phasing TSV were not found in the -r FASTA file, " +
+                             f"such as '{missingIDs[0]}'; was it the same file given to 'assembly phase'?")
+
+    # Make sure all paired contigs can be found
+    contigLengths = get_fasta_lengths(args.fastaFiles)
+    missingIDs = [ contigID for contigID in contigToPair if not contigID in contigLengths ]
+    if missingIDs != []:
+        raise ValueError(f"{len(missingIDs)} contig(s) in the phasing TSV were not found in the -f FASTA file(s), " +
+                         f"such as '{missingIDs[0]}'; were they the same files given to 'assembly phase'?")
+
+    # Rename paired contigs to their reference contig and orient them to match it
+    def paired_records():
+        for fastaFile in args.fastaFiles:
+            with read_gz_file(fastaFile) as fileIn:
+                for record in FASTATarium.fasta_parser(fileIn):
+                    if not record.id in contigToPair:
+                        continue
+                    pair = contigToPair[record.id]
+                    record = Sequence(pair["reference"], record.sequence)
+                    if pair["strand"] == "-":
+                        record = record.reverse_complement()
+                    yield record
+
+    # Write paired contigs, holding them in memory if they must be reordered
+    records = paired_records()
+    if args.referenceFile != None:
+        records = sorted(records, key=lambda record: refOrder[record.id])
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        for record in records:
+            fileOut.write(record.format(args.lineLength))
+
+    # Report on the pairings
+    idWidth = max([ len(x) for pair in pairs.values() for x in (pair["reference"], pair["contig"]) ] + [len("#reference")]) + 2
+    print("# Query contigs were paired with reference contigs as below:")
+    print(f"{'#reference':<{idWidth}}{'contig':<{idWidth}}{'strand':>8}{'aligned_bp':>14}")
+    references = sorted(pairs, key=lambda x: refOrder[x]) if args.referenceFile != None else pairs
+    for reference in references:
+        pair = pairs[reference]
+        print(f"{reference:<{idWidth}}{pair['contig']:<{idWidth}}{pair['strand']:>8}{pair['bp']:>14}")
+    numRC = sum([ 1 for pair in pairs.values() if pair["strand"] == "-" ])
+    print(f"# {len(pairs)} contig(s) were paired, of which {numRC} were reverse complemented")
+    if unpaired != []:
+        exampleIDs = ", ".join([ f"'{x}'" for x in unpaired[:10] ]) + (", ..." if len(unpaired) > 10 else "")
+        print(f"# {len(unpaired)} contig(s) were not output since another contig better matched their " +
+              f"reference contig; these include {exampleIDs}")
 
 # assembly > phase
 def assembly_phase(args):
@@ -85,7 +154,9 @@ def assembly_phase(args):
     if unknownIDs != set():
         raise ValueError(f"{len(unknownIDs)} query ID(s) in '{args.pafFile}' are not in the -i FASTA file(s), " +
                          f"such as '{sorted(unknownIDs)[0]}'; was the alignment made from different inputs?")
-    footprints = build_footprints(deduplicate_query(alignments))
+    dedupAlignments = deduplicate_query(alignments)
+    footprints = build_footprints(dedupAlignments)
+    orientations = infer_orientations(dedupAlignments)
 
     # Partition contigs into haplotype groups
     print(f"# Partitioning {len(footprints)} aligned contig(s) into {args.ploidy} group(s)...")
@@ -95,19 +166,19 @@ def assembly_phase(args):
 
     # Write per-contig phasing results
     with open(args.outputFileName, "w") as fileOut:
-        fileOut.write("#contig\tlength\tpartition\tstatus\taligned_bp\tunique_bp\treference_regions\treference_bp\n")
+        fileOut.write("#contig\tlength\tpartition\tstatus\taligned_bp\tunique_bp\treference_regions\treference_bp\treference_strand\n")
         for qid, length in queryLengths.items():
             if not qid in footprints:
-                fileOut.write(f"{qid}\t{length}\t.\tunaligned\t0\t0\t.\t.\n")
+                fileOut.write(f"{qid}\t{length}\t.\tunaligned\t0\t0\t.\t.\t.\n")
                 continue
 
-            regions, regionsBp = format_regions(footprints[qid])
+            regions, regionsBp, strands = format_regions(footprints[qid], orientations[qid])
             alignedBp = sum([ int(x) for x in regionsBp.split(",") ])
             if states[qid] is None:
-                fileOut.write(f"{qid}\t{length}\t.\tredundant\t{alignedBp}\t0\t{regions}\t{regionsBp}\n")
+                fileOut.write(f"{qid}\t{length}\t.\tredundant\t{alignedBp}\t0\t{regions}\t{regionsBp}\t{strands}\n")
             else:
                 fileOut.write(f"{qid}\t{length}\t{states[qid]+1}\tassigned\t{alignedBp}\t" +
-                              f"{uniqueBp[qid]}\t{regions}\t{regionsBp}\n")
+                              f"{uniqueBp[qid]}\t{regions}\t{regionsBp}\t{strands}\n")
 
     # Write and display per-reference coverage of each partition
     coverage = group_coverage(states, footprints, args.ploidy)

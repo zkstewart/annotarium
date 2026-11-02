@@ -17,7 +17,7 @@ import os, re, shutil, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
-    parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv
+    parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -51,6 +51,46 @@ def validate_as(args):
     Validation for arguments common to all "assembly" mode commands.
     '''
     pass # no arguments are shared between modes yet
+
+def validate_as_homology_pair(args):
+    '''
+    Validation for arguments used in "assembly homology_pair" mode.
+    '''
+    # Validate numeric arguments
+    if args.partition != None:
+        if args.partition < 1:
+            raise ValueError("--partition must be >= 1")
+        args.partition = str(args.partition)
+    if args.lineLength < 0:
+        raise ValueError("--multiline must be >= 0")
+    args.lineLength = args.lineLength if args.lineLength > 0 else None
+    
+    # Validate input files
+    args.phasingFile = os.path.abspath(args.phasingFile)
+    if not os.path.isfile(args.phasingFile):
+        raise FileNotFoundError(f"Phasing TSV file (-i {args.phasingFile}) does not exist!")
+    args.matches = parse_phasing_matches(args.phasingFile, partition=args.partition)
+    if args.matches == {}:
+        raise ValueError(f"No contigs are assigned to " +
+                         (f"partition {args.partition}" if args.partition != None else "a partition") +
+                         f" in the phasing TSV (-i {args.phasingFile})")
+    
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            raise FileNotFoundError(f"Contig FASTA file (-f {fastaFile}) does not exist!")
+    args.fastaFiles = [ os.path.abspath(fastaFile) for fastaFile in args.fastaFiles ]
+    if len(set(args.fastaFiles)) != len(args.fastaFiles):
+        raise ValueError("The same file was given more than once to -f")
+    
+    if args.referenceFile != None:
+        args.referenceFile = os.path.abspath(args.referenceFile)
+        if not os.path.isfile(args.referenceFile):
+            raise FileNotFoundError(f"Reference FASTA file (-r {args.referenceFile}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_as_phase(args):
     '''

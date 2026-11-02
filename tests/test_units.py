@@ -21,10 +21,10 @@ from modules.fasta import FASTATarium, Sequence
 from modules.msa import MAFFT
 from modules.annotable import Annotable
 from modules.minimap2 import parse_paf
-from modules.parsing import parse_phasing_tsv
+from modules.parsing import parse_phasing_tsv, parse_phasing_matches
 from modules.ragtag import RagTag
 from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
-    build_footprints, unique_coverage, group_coverage
+    build_footprints, infer_orientations, unique_coverage, group_coverage, pair_homologous_contigs
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -657,8 +657,8 @@ class TestPhasingIntervals(unittest.TestCase):
 
         # Assert
         self.assertEqual(alignments, {
-            "q1": [(0, 20000, "chr1", 1000, 21000)],
-            "q2": [(5000, 30000, "chr1", 55000, 80000)]
+            "q1": [(0, 20000, "chr1", 1000, 21000, "+")],
+            "q2": [(5000, 30000, "chr1", 55000, 80000, "+")]
         })
 
     def test_parse_paf_secondary(self):
@@ -674,9 +674,9 @@ class TestPhasingIntervals(unittest.TestCase):
         "Test that a query region aligning to multiple reference regions only keeps the longest"
         # Arrange
         alignments = { "q1": [
-            (0, 10000, "chr1", 0, 10000),
-            (0, 8000, "chr2", 0, 8000), # entirely within the first alignment's query region
-            (9000, 20000, "chr3", 0, 11000) # mostly outside the first alignment's query region
+            (0, 10000, "chr1", 0, 10000, "+"),
+            (0, 8000, "chr2", 0, 8000, "+"), # entirely within the first alignment's query region
+            (9000, 20000, "chr3", 0, 11000, "+") # mostly outside the first alignment's query region
         ]}
 
         # Act
@@ -689,9 +689,9 @@ class TestPhasingIntervals(unittest.TestCase):
         "Test that footprints are merged per reference contig"
         # Arrange
         alignments = { "q1": [
-            (0, 1000, "chr1", 0, 1000),
-            (1000, 2000, "chr1", 900, 1900),
-            (2000, 3000, "chr2", 500, 1500)
+            (0, 1000, "chr1", 0, 1000, "+"),
+            (1000, 2000, "chr1", 900, 1900, "+"),
+            (2000, 3000, "chr2", 500, 1500, "-")
         ]}
 
         # Act
@@ -699,6 +699,23 @@ class TestPhasingIntervals(unittest.TestCase):
 
         # Assert
         self.assertEqual(footprints, { "q1": { "chr1": [(0, 1900)], "chr2": [(500, 1500)] } })
+
+    def test_infer_orientations(self):
+        "Test that orientation per reference contig follows the strand with the most aligned query bases"
+        # Arrange
+        alignments = { "q1": [
+            (0, 1000, "chr1", 0, 1000, "-"),
+            (1000, 1500, "chr1", 1000, 1500, "+"), # minority inversion
+            (1500, 3000, "chr2", 0, 1500, "+"),
+            (3000, 3500, "chr3", 0, 500, "+"),
+            (3500, 4000, "chr3", 500, 1000, "-") # tie
+        ]}
+
+        # Act
+        orientations = infer_orientations(alignments)
+
+        # Assert
+        self.assertEqual(orientations, { "q1": { "chr1": "-", "chr2": "+", "chr3": "+" } })
 
 class TestHaplotypePartitioner(unittest.TestCase):
     def test_diploid_partition(self):
@@ -984,6 +1001,115 @@ class TestAssemblyScaffold(unittest.TestCase):
                 records = parse_fasta(os.path.join(scaffoldDir, f"partition{partition}.fasta"))
                 self.assertEqual(sorted([ record.id for record in records ]), ["chr1", "chr2"])
                 self.assertTrue(all([ len(record) >= 59000 for record in records ]))
+
+class TestHomologyPair(unittest.TestCase):
+    def write_phasing_tsv(self, tmpDir):
+        '''
+        Returns:
+            phasingFile -- a string indicating the location of a phasing TSV written to tmpDir
+        '''
+        phasingFile = os.path.join(tmpDir, "phasing.tsv")
+        with open(phasingFile, "w") as fileOut:
+            fileOut.write("#contig\tlength\tpartition\tstatus\taligned_bp\tunique_bp\treference_regions\treference_bp\treference_strand\n")
+            fileOut.write("scafA\t1000\t1\tassigned\t1000\t1000\tchr1:1-900,chr2:5-104\t900,100\t+,-\n")
+            fileOut.write("scafB\t500\t1\tassigned\t500\t500\tchr2:1-500\t500\t-\n")
+            fileOut.write("frag\t300\t2\tassigned\t300\t300\tchr1:1-300\t300\t+\n")
+            fileOut.write("dup\t300\t.\tredundant\t300\t0\tchr3:1-300\t300\t+\n")
+            fileOut.write("junk\t100\t.\tunaligned\t0\t0\t.\t.\t.\n")
+        return phasingFile
+
+    def test_parse_phasing_matches(self):
+        "Test that reference regions of assigned contigs are parsed alongside their aligned bases and strand"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            phasingFile = self.write_phasing_tsv(tmpDir)
+
+            # Act
+            matches = parse_phasing_matches(phasingFile)
+            partitionMatches = parse_phasing_matches(phasingFile, partition="2")
+
+            # Assert
+            self.assertEqual(list(matches), ["scafA", "scafB", "frag"])
+            self.assertEqual(matches["scafA"], [
+                { "reference": "chr1", "start": 1, "end": 900, "bp": 900, "strand": "+" },
+                { "reference": "chr2", "start": 5, "end": 104, "bp": 100, "strand": "-" }
+            ])
+            self.assertEqual(list(partitionMatches), ["frag"])
+
+    def test_parse_phasing_matches_old_format(self):
+        "Test that a phasing TSV lacking the reference_strand column is refused"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            phasingFile = os.path.join(tmpDir, "phasing.tsv")
+            with open(phasingFile, "w") as fileOut:
+                fileOut.write("#contig\tlength\tpartition\tstatus\taligned_bp\tunique_bp\treference_regions\treference_bp\n")
+                fileOut.write("scafA\t1000\t1\tassigned\t1000\t1000\tchr1:1-1000\t1000\n")
+
+            # Act & Assert
+            with self.assertRaises(ValueError):
+                parse_phasing_matches(phasingFile)
+
+    def test_pair_homologous_contigs(self):
+        "Test that each reference contig is paired with the query contig best matching it"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            matches = parse_phasing_matches(self.write_phasing_tsv(tmpDir))
+
+            # Act
+            pairs, unpaired = pair_homologous_contigs(matches)
+
+            # Assert
+            self.assertEqual({ reference: (pair["contig"], pair["strand"]) for reference, pair in pairs.items() },
+                             { "chr1": ("scafA", "+"), "chr2": ("scafB", "-") })
+            self.assertEqual(unpaired, ["frag"])
+
+    @unittest.skipIf(MINIMAP2_EXE is None, "minimap2 is not discoverable in the system PATH")
+    def test_assembly_homology_pair(self):
+        "Test the 'assembly homology_pair' command renames and reverse complements contigs to match the reference"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            referenceFile, contigsFile = write_phasing_inputs(tmpDir)
+            records = { record.id: record for record in parse_fasta(contigsFile) }
+            queryFile = os.path.join(tmpDir, "query.fasta")
+            with open(queryFile, "w") as fileOut:
+                fileOut.write(records["A_chr2"].reverse_complement().format().replace(">A_chr2", ">scaffold_2"))
+                fileOut.write(Sequence("scaffold_1", str(records["A_chr1"])).format())
+                fileOut.write(records["B_chr1_left"].format())
+
+            phaseDir = os.path.join(tmpDir, "phase")
+            outputFile = os.path.join(tmpDir, "paired.fasta")
+            orderedFile = os.path.join(tmpDir, "paired.ordered.fasta")
+            phaseCmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "phase",
+                "-i", queryFile,
+                "-r", referenceFile,
+                "-o", phaseDir,
+                "--ploidy", "2",
+                "--minAlignLen", "1000"
+            ]
+            pairCmd = [
+                sys.executable, os.path.join(baseDir, "annotarium.py"), "assembly", "homology_pair",
+                "-i", os.path.join(phaseDir, "phasing.tsv"),
+                "-f", queryFile,
+                "-o", outputFile
+            ]
+            orderedCmd = pairCmd[:-1] + [orderedFile, "-r", referenceFile]
+            returncode, stdout, stderr = run_subprocess(phaseCmd)
+            self.assertEqual(returncode, 0, f"Expected no error from 'assembly phase' but got: {stderr}")
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(pairCmd)
+            orderedReturncode, orderedStdout, orderedStderr = run_subprocess(orderedCmd)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            self.assertEqual(orderedReturncode, 0, f"Expected no error with -r but got: {orderedStderr}")
+            paired = [ (record.id, str(record)) for record in parse_fasta(outputFile) ]
+            self.assertEqual(paired, [ ("chr2", str(records["A_chr2"])), ("chr1", str(records["A_chr1"])) ],
+                             "Output should be in -f file order without -r")
+            ordered = [ (record.id, str(record)) for record in parse_fasta(orderedFile) ]
+            self.assertEqual(ordered, [ ("chr1", str(records["A_chr1"])), ("chr2", str(records["A_chr2"])) ],
+                             "Output should be in -r file order with -r")
 
 if __name__ == '__main__':
     unittest.main()

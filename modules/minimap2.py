@@ -94,7 +94,7 @@ def parse_paf(pafFile, minQ=0, minAlignLen=0):
                        for an alignment to be kept
     Returns:
         alignments -- a dictionary where keys are query IDs and values are lists of tuples
-                      with structure like (qstart, qend, tid, tstart, tend)
+                      with structure like (qstart, qend, tid, tstart, tend, strand)
     '''
     alignments = {}
     with read_gz_file(pafFile) as fileIn:
@@ -113,7 +113,7 @@ def parse_paf(pafFile, minQ=0, minAlignLen=0):
             if int(alignLen) < minAlignLen:
                 continue
 
-            alignments.setdefault(qid, []).append((int(qstart), int(qend), tid, int(tstart), int(tend)))
+            alignments.setdefault(qid, []).append((int(qstart), int(qend), tid, int(tstart), int(tend), strand))
     return alignments
 
 class Paf2dotplot:

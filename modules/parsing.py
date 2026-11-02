@@ -130,6 +130,34 @@ def parse_list_file(fileName):
                 listedValues.append(l)
     return listedValues
 
+def iterate_phasing_tsv(fileName, requiredColumns=["contig", "length", "partition", "status"]):
+    '''
+    Iterates through the rows of the TSV file produced by 'assembly phase'.
+    
+    Parameters:
+        fileName -- a string indicating the location of an 'assembly phase' TSV file
+        requiredColumns -- OPTIONAL; a list of column names which must be in the header
+    Yields:
+        row -- a dictionary where keys are column names (with the '#' of the first column
+               removed) and values are the string contents of that row's cells
+    '''
+    with read_gz_file(fileName) as fileIn:
+        header = fileIn.readline().rstrip("\r\n").split("\t")
+        if not header[0].startswith("#"):
+            raise ValueError(f"'{fileName}' does not have the header expected of an 'assembly phase' TSV")
+        header[0] = header[0][1:]
+        
+        missingColumns = [ column for column in requiredColumns if not column in header ]
+        if missingColumns != []:
+            raise ValueError(f"'{fileName}' does not have the column(s) {missingColumns} expected of an " +
+                             "'assembly phase' TSV; was it made by an older annotarium version?")
+        
+        for line in fileIn:
+            sl = line.rstrip("\r\n").split("\t")
+            if sl == [""]:
+                continue
+            yield dict(zip(header, sl))
+
 def parse_phasing_tsv(fileName):
     '''
     Parses the TSV file produced by 'assembly phase' to obtain the contigs assigned
@@ -139,26 +167,54 @@ def parse_phasing_tsv(fileName):
         partitions -- a dictionary where keys are partition labels (e.g., '1', '2') in
                       numeric order, and values are lists of contig IDs in file order
     '''
-    EXPECTED_HEADER = ["#contig", "length", "partition", "status"]
-    
     partitions = {}
-    with read_gz_file(fileName) as fileIn:
-        header = fileIn.readline().rstrip("\r\n").split("\t")
-        if header[0:len(EXPECTED_HEADER)] != EXPECTED_HEADER:
-            raise ValueError(f"'{fileName}' does not have the header expected of an 'assembly phase' TSV " +
-                             f"(beginning with {EXPECTED_HEADER})")
-        
-        for line in fileIn:
-            sl = line.rstrip("\r\n").split("\t")
-            if sl == [""]:
-                continue
-            contigID, length, partition, status = sl[0:4]
-            if status == "assigned":
-                if not partition.isdigit():
-                    raise ValueError(f"'{contigID}' in '{fileName}' is assigned to an invalid partition '{partition}'")
-                partitions.setdefault(partition, []).append(contigID)
+    for row in iterate_phasing_tsv(fileName):
+        if row["status"] == "assigned":
+            if not row["partition"].isdigit():
+                raise ValueError(f"'{row['contig']}' in '{fileName}' is assigned to an invalid partition '{row['partition']}'")
+            partitions.setdefault(row["partition"], []).append(row["contig"])
     
     return { partition: partitions[partition] for partition in sorted(partitions, key=int) }
+
+def parse_phasing_matches(fileName, partition=None):
+    '''
+    Parses the TSV file produced by 'assembly phase' to obtain the reference regions
+    each assigned contig aligns to.
+    
+    Parameters:
+        fileName -- a string indicating the location of an 'assembly phase' TSV file
+        partition -- OPTIONAL; a string of the partition label to restrict parsing to,
+                     or None to parse contigs from all partitions
+    Returns:
+        matches -- a dictionary where keys are contig IDs and values are lists of dictionaries
+                   with keys 'reference', 'start', 'end', 'bp', and 'strand', ordered as in
+                   the file (i.e., most aligned bases first)
+    '''
+    REQUIRED_COLUMNS = ["contig", "partition", "status", "reference_regions", "reference_bp", "reference_strand"]
+    
+    matches = {}
+    for row in iterate_phasing_tsv(fileName, REQUIRED_COLUMNS):
+        if row["status"] != "assigned":
+            continue
+        if partition is not None and row["partition"] != partition:
+            continue
+        
+        regions = row["reference_regions"].split(",")
+        regionsBp = row["reference_bp"].split(",")
+        strands = row["reference_strand"].split(",")
+        if not len(regions) == len(regionsBp) == len(strands):
+            raise ValueError(f"'{row['contig']}' in '{fileName}' has differing numbers of reference regions, " +
+                             "aligned bases, and strands")
+        
+        matches[row["contig"]] = []
+        for region, bp, strand in zip(regions, regionsBp, strands):
+            reference, coords = region.rsplit(":", maxsplit=1) # reference IDs may contain ':'
+            start, end = coords.split("-")
+            matches[row["contig"]].append({
+                "reference": reference, "start": int(start), "end": int(end),
+                "bp": int(bp), "strand": strand
+            })
+    return matches
 
 def parse_fasta_to_lengths(fastaFile):
     '''

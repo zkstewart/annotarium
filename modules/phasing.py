@@ -78,11 +78,37 @@ def build_footprints(alignments):
     footprints = {}
     for qid, qidAlignments in alignments.items():
         byRef = {}
-        for qstart, qend, tid, tstart, tend in qidAlignments:
+        for qstart, qend, tid, tstart, tend, strand in qidAlignments:
             byRef.setdefault(tid, []).append((tstart, tend))
         if byRef != {}:
             footprints[qid] = { tid: merge_intervals(intervals) for tid, intervals in byRef.items() }
     return footprints
+
+def infer_orientations(alignments):
+    '''
+    Determines the orientation of each query relative to each reference contig it aligns to,
+    according to which strand has the most aligned query bases. Ties are treated as '+'.
+
+    Parameters:
+        alignments -- a dictionary as produced by minimap2.parse_paf() or deduplicate_query()
+    Returns:
+        orientations -- a dictionary with structure like:
+                        {
+                            qid1: { tid1: '+', tid2: '-' },
+                            qid2: { ... },
+                            ...
+                        }
+                        where '-' indicates the query must be reverse complemented to
+                        match the reference's orientation
+    '''
+    orientations = {}
+    for qid, qidAlignments in alignments.items():
+        strandBp = {}
+        for qstart, qend, tid, tstart, tend, strand in qidAlignments:
+            strandBp.setdefault(tid, {"+": 0, "-": 0})[strand] += qend - qstart
+        if strandBp != {}:
+            orientations[qid] = { tid: ("-" if bp["-"] > bp["+"] else "+") for tid, bp in strandBp.items() }
+    return orientations
 
 class HaplotypePartitioner:
     '''
@@ -375,3 +401,31 @@ def group_coverage(states, footprints, ploidy):
             byGroupRef.setdefault(tid, [ [] for _ in range(ploidy) ])[state].extend(intervals)
     return { tid: [ intervals_length(merge_intervals(x)) for x in groupIntervals ]
              for tid, groupIntervals in byGroupRef.items() }
+
+def pair_homologous_contigs(matches):
+    '''
+    Identifies a 1:1 pairing of query contigs to reference contigs. Each query contig is
+    associated with the reference contig it has the most aligned bases to, and where multiple
+    query contigs are associated with the same reference contig, the one with the most aligned
+    bases is kept.
+
+    Parameters:
+        matches -- a dictionary as produced by parsing.parse_phasing_matches()
+    Returns:
+        pairs -- a dictionary where keys are reference contig IDs and values are dictionaries
+                 of the best match from parse_phasing_matches() with an added 'contig' key
+        unpaired -- a list of query contig IDs which lost out to another query contig
+    '''
+    pairs = {}
+    for contig, contigMatches in matches.items():
+        if contigMatches == []:
+            continue
+        best = max(contigMatches, key=lambda x: x["bp"]) # max() keeps the first of any ties
+        reference = best["reference"]
+        if not reference in pairs or best["bp"] > pairs[reference]["bp"]: # ties keep the earlier contig
+            pairs[reference] = { **best, "contig": contig }
+
+    pairedContigs = set([ pair["contig"] for pair in pairs.values() ])
+    unpaired = [ contig for contig, contigMatches in matches.items()
+                 if contigMatches != [] and not contig in pairedContigs ]
+    return pairs, unpaired
