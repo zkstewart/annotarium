@@ -1,0 +1,7 @@
+    SW   perc perc perc  query     position in query              matching                   repeat          position in repeat
+ score   div. del. ins.  sequence  begin    end          (left)   repeat                     class/family begin   end    (left)      ID
+
+  1271    0.4  4.6  0.0  chr1             4      262 (26718936) + CITME_RE696_RIX            Unspecified    6978   7248  (2660)      1  
+  1271    0.4  4.6  0.0  chr1            32      290 (26718908) + CITME_RE696_RIX            Unspecified    6978   7248  (2660)      2  
+   449   15.6  1.1 11.6  chr1          5319     5499 (26713699) C MURKO_RE46_RIX             Unspecified     (0)   9631    9468    170 *
+   617   10.1 15.6  0.0  chr1      16037200 16037308 (10681890) + CITME_RE4_RLC_sire         Unspecified    8845   8970  (1270)  19572  

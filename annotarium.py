@@ -34,6 +34,7 @@ from modules.validation import validate_ap, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
+    validate_rm, validate_rm_classify, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
 from modules.assembly import assembly_homology_pair, assembly_phase, assembly_scaffold
@@ -49,6 +50,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.msa import fasta_to_msa
+from modules.repeatmasker import repeatmasker_classify
 from modules.rnammer import rnammer_reformat
 from _version import __version__
 
@@ -1388,6 +1390,39 @@ def main():
                            set to 0 for no filtering""",
                            default=0)
     
+    # RepeatMasker subparser
+    rmparser = subparsers.add_parser("repeatmasker",
+                                     parents=[p],
+                                     add_help=False,
+                                     help="RepeatMasker results handling")
+    rmparser.set_defaults(func=rmmain)
+    
+    subRepeatMaskerParsers = rmparser.add_subparsers(dest="repeatmaskerMode",
+                                                     required=True)
+    
+    # RepeatMasker > classify mode
+    rmclassifyparser = subRepeatMaskerParsers.add_parser("classify",
+                                                         parents=[p],
+                                                         add_help=False,
+                                                         help="Replace class/family labels in a .out file")
+    rmclassifyparser.add_argument("-i", dest="outFile",
+                                  required=True,
+                                  help="Location of RepeatMasker .out file")
+    rmclassifyparser.add_argument("-t", dest="classFamilyFile",
+                                  required=True,
+                                  help="""Location of two column TSV pairing repeat IDs
+                                  (column 1) to class/family labels (column 2)""")
+    rmclassifyparser.add_argument("-o", dest="outputFileName",
+                                  required=True,
+                                  help="Location to write relabelled .out file")
+    rmclassifyparser.add_argument("--allowMissing", dest="allowMissing",
+                                  required=False,
+                                  action="store_true",
+                                  help="""Optionally, leave the class/family of repeat IDs
+                                  absent from the TSV unchanged; default == error if any
+                                  repeat ID is absent""",
+                                  default=False)
+    
     # RNAmmer mode
     rnammerparser = subparsers.add_parser("rnammer",
                                           parents=[p],
@@ -1444,6 +1479,10 @@ def main():
         print("## annotarium.py - Homologs (2 column IDs pair) handling ##")
         validate_p(args)
         pmain(args)
+    if args.mode == "repeatmasker":
+        print("## annotarium.py - RepeatMasker results handling ##")
+        validate_rm(args)
+        rmmain(args)
     if args.mode == "rnammer":
         print("## annotarium.py - RNAmmer handling ##")
         validate_rnammer(args)
@@ -1695,6 +1734,13 @@ def irfmain(args):
     irf_to_gff3(args)
     
     print("IRF handling complete!")
+
+def rmmain(args):
+    # Split into sub-mode-specific functions
+    if args.repeatmaskerMode == "classify":
+        print("## RepeatMasker class/family relabelling ##")
+        validate_rm_classify(args)
+        repeatmasker_classify(args)
 
 def rnammermain(args):
     rnammer_reformat(args)

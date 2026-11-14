@@ -1143,6 +1143,30 @@ def validate_p_to_bedpe(args):
     if not os.path.isfile(args.gff3File2):
         raise FileNotFoundError(f"GFF3 file (-g2 {args.gff3File2}) does not exist!")
 
+def validate_rm(args):
+    '''
+    Validation for arguments common to all "repeatmasker" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_rm_classify(args):
+    '''
+    Validation for arguments used in "repeatmasker classify" mode.
+    '''
+    # Validate input files
+    args.outFile = os.path.abspath(args.outFile)
+    if not os.path.isfile(args.outFile):
+        raise FileNotFoundError(f"RepeatMasker .out file (-i {args.outFile}) does not exist!")
+    
+    args.classFamilyFile = os.path.abspath(args.classFamilyFile)
+    if not os.path.isfile(args.classFamilyFile):
+        raise FileNotFoundError(f"Class/family TSV file (-t {args.classFamilyFile}) does not exist!")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
 def validate_rnammer(args):
     '''
     Validation for arguments used in "rnammer" mode.

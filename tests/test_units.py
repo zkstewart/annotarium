@@ -25,6 +25,7 @@ from modules.parsing import parse_phasing_tsv, parse_phasing_matches
 from modules.ragtag import RagTag
 from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
     build_footprints, infer_orientations, unique_coverage, group_coverage, pair_homologous_contigs
+from modules.repeatmasker import parse_class_family_tsv
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +34,7 @@ codonIndelsFile = os.path.join(dataDir, "codon_indels.fasta")
 annotableFile = os.path.join(dataDir, "annotable.tsv")
 pafFile = os.path.join(dataDir, "phasing.paf")
 agpFile = os.path.join(dataDir, "ragtag.agp")
+repeatmaskerFile = os.path.join(dataDir, "repeatmasker.out")
 
 MAFFT_EXE = shutil.which("mafft")
 MINIMAP2_EXE = shutil.which("minimap2")
@@ -1110,6 +1112,118 @@ class TestHomologyPair(unittest.TestCase):
             ordered = [ (record.id, str(record)) for record in parse_fasta(orderedFile) ]
             self.assertEqual(ordered, [ ("chr1", str(records["A_chr1"])), ("chr2", str(records["A_chr2"])) ],
                              "Output should be in -r file order with -r")
+
+class TestRepeatMaskerClassify(unittest.TestCase):
+    LABELS = { "CITME_RE696_RIX": "LINE/Unknown", "MURKO_RE46_RIX": "LINE/Unknown",
+               "CITME_RE4_RLC_sire": "LTR/Copia" }
+
+    def write_tsv(self, tmpDir, labels):
+        '''
+        Returns:
+            tsvFile -- a string indicating the location of a class/family TSV written to tmpDir
+        '''
+        tsvFile = os.path.join(tmpDir, "classes.tsv")
+        with open(tsvFile, "w") as fileOut:
+            fileOut.write("#repeat_id\tclass_family\n")
+            for repeatID, classFamily in labels.items():
+                fileOut.write(f"{repeatID}\t{classFamily}\n")
+        return tsvFile
+
+    def run_classify(self, tmpDir, labels, extraArgs=[]):
+        '''
+        Returns:
+            returncode, stdout, stderr -- as per run_subprocess
+            outputFile -- a string indicating the location of the output .out file
+        '''
+        outputFile = os.path.join(tmpDir, "classified.out")
+        cmd = [
+            sys.executable, os.path.join(baseDir, "annotarium.py"), "repeatmasker", "classify",
+            "-i", repeatmaskerFile,
+            "-t", self.write_tsv(tmpDir, labels),
+            "-o", outputFile
+        ] + extraArgs
+        return *run_subprocess(cmd), outputFile
+
+    def test_parse_class_family_tsv(self):
+        "Test that a TSV is parsed with comments skipped and conflicting labels rejected"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            tsvFile = self.write_tsv(tmpDir, self.LABELS)
+            conflictFile = os.path.join(tmpDir, "conflict.tsv")
+            with open(conflictFile, "w") as fileOut:
+                fileOut.write("rep1\tLTR/Copia\nrep1\tLTR/Gypsy\n")
+
+            # Act
+            classFamilies = parse_class_family_tsv(tsvFile)
+
+            # Assert
+            self.assertEqual(classFamilies, self.LABELS)
+            with self.assertRaises(ValueError):
+                parse_class_family_tsv(conflictFile)
+
+    def test_classify(self):
+        "Test that class/family labels are replaced, other values are kept, and columns stay aligned"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            with open(repeatmaskerFile, "r") as fileIn:
+                original = fileIn.read().splitlines()
+
+            # Act
+            returncode, stdout, stderr, outputFile = self.run_classify(tmpDir, self.LABELS)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            with open(outputFile, "r") as fileIn:
+                classified = fileIn.read().splitlines()
+            self.assertEqual(classified[:3], original[:3], "Header should be unchanged when labels fit")
+            for before, after in zip(original[3:], classified[3:]):
+                beforeFields, afterFields = before.split(), after.split()
+                self.assertEqual(afterFields[10], self.LABELS[beforeFields[9]])
+                self.assertEqual(afterFields[:10] + afterFields[11:], beforeFields[:10] + beforeFields[11:])
+                self.assertEqual(len(after), len(before), "Column alignment should be kept")
+
+    def test_classify_widens_column(self):
+        "Test that a label longer than the class/family column widens it, header included"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            labels = { **self.LABELS, "CITME_RE4_RLC_sire": "Retrotransposon/Unknown_long_label" }
+
+            # Act
+            returncode, stdout, stderr, outputFile = self.run_classify(tmpDir, labels)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            with open(repeatmaskerFile, "r") as fileIn:
+                original = fileIn.read().splitlines()
+            with open(outputFile, "r") as fileIn:
+                classified = fileIn.read().splitlines()
+            def begin_offsets(lines): # distance between the end of the 'begin' header and data values
+                headerEnd = lines[1].rindex("begin") + len("begin")
+                return { list(re.finditer(r"\S+", line))[11].end() - headerEnd for line in lines[3:] }
+            self.assertGreater(len(classified[3]), len(original[3]), "The class/family column should widen")
+            self.assertEqual(len(begin_offsets(original)), 1, "Test data should have an aligned 'begin' column")
+            self.assertEqual(begin_offsets(classified), begin_offsets(original),
+                             "The 'begin' column should stay aligned under its header")
+
+    def test_classify_missing(self):
+        "Test that repeat IDs absent from the TSV cause an error unless --allowMissing is given"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            labels = { k:v for k,v in self.LABELS.items() if k != "MURKO_RE46_RIX" }
+
+            # Act
+            returncode, stdout, stderr, outputFile = self.run_classify(tmpDir, labels)
+            self.assertNotEqual(returncode, 0, "Expected an error for a missing repeat ID")
+            self.assertFalse(os.path.exists(outputFile), "No output should be written on error")
+            allowReturncode, allowStdout, allowStderr, outputFile = self.run_classify(tmpDir, labels, ["--allowMissing"])
+
+            # Assert
+            self.assertIn("MURKO_RE46_RIX", stderr)
+            self.assertEqual(allowReturncode, 0, f"Expected no error with --allowMissing but got: {allowStderr}")
+            with open(outputFile, "r") as fileIn:
+                classes = { line.split()[9]: line.split()[10] for line in fileIn.read().splitlines()[3:] }
+            self.assertEqual(classes["MURKO_RE46_RIX"], "Unspecified", "Missing IDs should keep their label")
+            self.assertEqual(classes["CITME_RE4_RLC_sire"], "LTR/Copia")
 
 if __name__ == '__main__':
     unittest.main()
