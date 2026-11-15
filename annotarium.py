@@ -35,6 +35,7 @@ from modules.validation import validate_ap, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_qc, validate_qc_compleasm, validate_qc_compleasm_set_optimise, validate_qc_compleasm_tabulate, \
+        validate_qc_fastqc, validate_qc_fastqc_tabulate, \
     validate_rm, validate_rm_classify, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
@@ -51,7 +52,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.msa import fasta_to_msa
-from modules.qc import qc_compleasm_set_optimise, qc_compleasm_tabulate
+from modules.qc import qc_compleasm_set_optimise, qc_compleasm_tabulate, qc_fastqc_tabulate
 from modules.repeatmasker import repeatmasker_classify
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -1452,6 +1453,36 @@ def main():
                                    required=True,
                                    help="Location to write summary table")
     
+    # QC > fastqc subparser
+    qcfastqcparser = subQCParsers.add_parser("fastqc",
+                                             parents=[p],
+                                             add_help=False,
+                                             help="FastQC results handling")
+    
+    subQCFastQCParsers = qcfastqcparser.add_subparsers(dest="fastqcMode",
+                                                       required=True)
+    
+    # QC > fastqc > tabulate mode
+    qcftabulateparser = subQCFastQCParsers.add_parser("tabulate",
+                                                      parents=[p],
+                                                      add_help=False,
+                                                      help="Tabulate FastQC flags into an Excel workbook")
+    qcftabulateparser.add_argument("-i", dest="inputDirectories",
+                                   required=True,
+                                   nargs="+",
+                                   help="""Location of one or more FastQC output directories (one per
+                                   read prefix, holding its '_fastqc.zip' file(s)) and/or directories
+                                   containing them""")
+    qcftabulateparser.add_argument("-o", dest="outputFileName",
+                                   required=True,
+                                   help="Location to write Excel (.xlsx) workbook")
+    qcftabulateparser.add_argument("-s", dest="sampleNamesFile",
+                                   required=False,
+                                   help="""Optionally, specify a two column TSV of read prefixes
+                                   (i.e., -i directory names) and sample names to label the first
+                                   sheet with; every read prefix must be listed""",
+                                   default=None)
+    
     # RepeatMasker subparser
     rmparser = subparsers.add_parser("repeatmasker",
                                      parents=[p],
@@ -1813,6 +1844,12 @@ def qcmain(args):
             print("## compleasm results tabulation ##")
             validate_qc_compleasm_tabulate(args) # sets args.summaryFiles
             qc_compleasm_tabulate(args)
+    if args.qcMode == "fastqc":
+        validate_qc_fastqc(args)
+        if args.fastqcMode == "tabulate":
+            print("## FastQC results tabulation ##")
+            validate_qc_fastqc_tabulate(args) # sets args.samples and args.sampleNames
+            qc_fastqc_tabulate(args)
 
 def rmmain(args):
     # Split into sub-mode-specific functions

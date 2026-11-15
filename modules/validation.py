@@ -20,6 +20,7 @@ from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_c
     parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches, \
     parse_file_contig_tsv
 from compleasm import locate_compleasm_table, find_compleasm_summaries
+from fastqc import find_fastqc_samples, parse_sample_names_tsv
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -1240,6 +1241,51 @@ def validate_qc_compleasm_tabulate(args):
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_qc_fastqc(args):
+    '''
+    Validation for arguments common to all "qc fastqc" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_qc_fastqc_tabulate(args):
+    '''
+    Validation for arguments used in "qc fastqc tabulate" mode.
+    '''
+    # Validate input directories and locate FastQC results
+    for inputDirectory in args.inputDirectories:
+        if not os.path.isdir(inputDirectory):
+            raise DirectoryNotFoundError(f"Input directory (-i {inputDirectory}) does not exist!")
+    args.inputDirectories = [ os.path.abspath(inputDirectory) for inputDirectory in args.inputDirectories ]
+    if len(set(args.inputDirectories)) != len(args.inputDirectories):
+        raise ValueError("The same directory was given more than once to -i")
+    
+    args.samples = find_fastqc_samples(args.inputDirectories)
+    if args.samples == {}:
+        raise FileNotFoundError("No FastQC '_fastqc.zip' files were found in the -i directories " +
+                                "or their subdirectories")
+    
+    # Validate sample names file
+    if args.sampleNamesFile != None:
+        args.sampleNamesFile = os.path.abspath(args.sampleNamesFile)
+        if not os.path.isfile(args.sampleNamesFile):
+            raise FileNotFoundError(f"Sample names file (-s {args.sampleNamesFile}) does not exist!")
+        args.sampleNames = parse_sample_names_tsv(args.sampleNamesFile)
+        
+        unnamed = [ prefix for prefix in args.samples if not prefix in args.sampleNames ]
+        if unnamed != []:
+            examples = ", ".join(f"'{x}'" for x in unnamed[:5])
+            raise ValueError(f"{len(unnamed)} read prefix(es) are not in '{args.sampleNamesFile}' " +
+                             f"(e.g., {examples}); every FastQC result must be given a sample name")
+    else:
+        args.sampleNames = None
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if not args.outputFileName.endswith(".xlsx"):
+        args.outputFileName += ".xlsx"
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 

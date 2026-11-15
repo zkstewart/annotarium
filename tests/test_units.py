@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import os, random, re, sys, unittest, shutil, subprocess, tempfile
+import os, random, re, sys, unittest, shutil, subprocess, tempfile, zipfile
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.fasta import FASTATarium, Sequence
@@ -28,6 +28,7 @@ from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_inter
 from modules.repeatmasker import parse_class_family_tsv
 from modules.compleasm import CompleasmTable, SetOptimiser, parse_compleasm_summary
 from modules.parsing import parse_file_contig_tsv
+from modules.fastqc import parse_fastqc_zip, compare_reads
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +42,12 @@ repeatmaskerFile = os.path.join(dataDir, "repeatmasker.out")
 MAFFT_EXE = shutil.which("mafft")
 MINIMAP2_EXE = shutil.which("minimap2")
 RAGTAG_EXE = shutil.which("ragtag.py")
+
+try:
+    import xlsxwriter, openpyxl
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
 
 # Define utility functions
 def run_subprocess(command):
@@ -1377,6 +1384,134 @@ class TestCompleasmTabulate(unittest.TestCase):
                 ["sample", "lineage", "S", "D", "F", "M", "N"],
                 ["protein", "test_odb12", "80.00", "10.00", "5.00", "5.00", "100"]
             ])
+
+def write_fastqc_zip(outputDir, readName, flags, totalReads, lengthCounts):
+    '''
+    Writes a minimal FastQC '_fastqc.zip' file in the FastQC 0.12.1 format.
+    
+    Parameters:
+        flags -- a list of 'pass', 'warn' or 'fail' values, one per module in MODULES
+        lengthCounts -- a list of (length, count) tuples where length can be a range like '35-39'
+    '''
+    MODULES = ["Basic Statistics", "Per base sequence quality", "Per sequence quality scores",
+               "Sequence Length Distribution", "Adapter Content"]
+    lines = ["##FastQC\t0.12.1"]
+    for module, flag in zip(MODULES, flags):
+        lines.append(f">>{module}\t{flag}")
+        if module == "Basic Statistics":
+            lines += ["#Measure\tValue", f"Filename\t{readName}.fq.gz", f"Total Sequences\t{totalReads}",
+                      "Total Bases\t1 Mbp", "Sequences flagged as poor quality\t3", "%GC\t38"]
+        elif module == "Sequence Length Distribution":
+            lines += ["#Length\tCount"] + [ f"{length}\t{count}" for length, count in lengthCounts ]
+        lines.append(">>END_MODULE")
+    
+    zipFile = os.path.join(outputDir, f"{readName}_fastqc.zip")
+    with zipfile.ZipFile(zipFile, "w") as archive:
+        archive.writestr(f"{readName}_fastqc/fastqc_data.txt", "\n".join(lines) + "\n")
+    return zipFile
+
+class TestFastQCTabulate(unittest.TestCase):
+    def write_runs(self, tmpDir):
+        '''
+        Returns:
+            runsDir -- a directory holding a paired-end 'pairedA' and single-end 'singleB' sample
+        '''
+        runsDir = os.path.join(tmpDir, "fastqc")
+        pairedDir, singleDir = os.path.join(runsDir, "pairedA"), os.path.join(runsDir, "singleB")
+        os.makedirs(pairedDir)
+        os.makedirs(singleDir)
+        write_fastqc_zip(pairedDir, "pairedA_1", ["pass", "pass", "warn", "pass", "fail"], 100, [("10-20", 50), ("100", 50)])
+        write_fastqc_zip(pairedDir, "pairedA_2", ["pass", "warn", "warn", "pass", "fail"], 100, [("100", 100)])
+        write_fastqc_zip(singleDir, "singleB", ["pass", "pass", "pass", "pass", "pass"], 10, [("50", 10)])
+        return runsDir
+
+    def test_parse_fastqc_zip(self):
+        "Test that read counts, approximate base pairs and flags are parsed from a FastQC zip"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            zipFile = write_fastqc_zip(tmpDir, "reads_1", ["pass", "warn", "fail", "pass", "pass"], 100, [("10-20", 50), ("100", 50)])
+
+            # Act
+            stats = parse_fastqc_zip(zipFile)
+
+            # Assert
+            self.assertEqual(stats["total_reads"], 100)
+            self.assertEqual(stats["low_quality_reads"], 3)
+            self.assertEqual(stats["approx_bp"], 15 * 50 + 100 * 50, "Length ranges should use their midpoint")
+            self.assertEqual(list(stats)[3:], ["basic_statistics", "per_base_sequence_quality",
+                                               "per_sequence_quality_scores", "sequence_length_distribution",
+                                               "adapter_content"])
+            self.assertEqual(stats["per_base_sequence_quality"], "WARNING")
+            self.assertEqual(stats["per_sequence_quality_scores"], "FAIL")
+
+    def test_compare_reads(self):
+        "Test that read pairs are summed and their flags compared"
+        # Arrange
+        forward = { "total_reads": 10, "approx_bp": 1000, "low_quality_reads": 1, "a": "PASS", "b": "WARNING" }
+        reverse = { "total_reads": 10, "approx_bp": 900, "low_quality_reads": 0, "a": "PASS", "b": "FAIL" }
+
+        # Act
+        paired = compare_reads(forward, reverse, ["a", "b", "c"])
+        single = compare_reads(forward, None, ["a", "b", "c"])
+
+        # Assert
+        self.assertEqual(paired, { "total_reads": 20, "approx_bp": 1900, "low_quality_reads": 1,
+                                   "a": "SAME", "b": "DIFFERS", "c": "." })
+        self.assertEqual(single, { "total_reads": 10, "approx_bp": 1000, "low_quality_reads": 1,
+                                   "a": ".", "b": ".", "c": "." })
+
+    @unittest.skipIf(not EXCEL_AVAILABLE, "xlsxwriter and openpyxl are needed to write and read workbooks")
+    def test_tabulate(self):
+        "Test that a combined sheet with sample names comes first when any reads are paired"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            runsDir = self.write_runs(tmpDir)
+            namesFile = os.path.join(tmpDir, "names.tsv")
+            with open(namesFile, "w") as fileOut:
+                fileOut.write("pairedA\tSample A\nsingleB\tSample B\n")
+            outputFile = os.path.join(tmpDir, "fastqc") # .xlsx should be appended
+            cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "fastqc", "tabulate",
+                    "-i", runsDir, "-o", outputFile, "-s", namesFile ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            workbook = openpyxl.load_workbook(outputFile + ".xlsx")
+            self.assertEqual(workbook.sheetnames, ["Combined Reads", "Forward Reads", "Reverse Reads"])
+            combined = list(workbook["Combined Reads"].iter_rows(values_only=True))
+            self.assertEqual(combined[0][:5], ("read_prefix", "sample_name", "total_reads", "approx_bp", "low_quality_reads"))
+            self.assertEqual(combined[1], ("pairedA", "Sample A", 200, 15750, 6, "SAME", "DIFFERS", "SAME", "SAME", "SAME"))
+            self.assertEqual(combined[2], ("singleB", "Sample B", 10, 500, 3, ".", ".", ".", ".", "."))
+            forward = list(workbook["Forward Reads"].iter_rows(values_only=True))
+            self.assertNotIn("sample_name", forward[0], "Only the first sheet should have sample names")
+            self.assertEqual(len(list(workbook["Reverse Reads"].iter_rows())), 2, "Only paired samples have reverse reads")
+
+    @unittest.skipIf(not EXCEL_AVAILABLE, "xlsxwriter and openpyxl are needed to write and read workbooks")
+    def test_tabulate_single_end(self):
+        "Test that single-end reads only get a forward sheet, and unnamed read prefixes cause an error"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            runsDir = self.write_runs(tmpDir)
+            namesFile = os.path.join(tmpDir, "names.tsv")
+            with open(namesFile, "w") as fileOut:
+                fileOut.write("singleB\tSample B\n")
+            singleFile, pairedFile = os.path.join(tmpDir, "single.xlsx"), os.path.join(tmpDir, "paired.xlsx")
+            baseCmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "fastqc", "tabulate", "-s", namesFile ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(baseCmd + [ "-i", os.path.join(runsDir, "singleB"), "-o", singleFile ])
+            unnamedReturncode, unnamedStdout, unnamedStderr = run_subprocess(baseCmd + [ "-i", runsDir, "-o", pairedFile ])
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            workbook = openpyxl.load_workbook(singleFile)
+            self.assertEqual(workbook.sheetnames, ["Forward Reads"])
+            self.assertEqual(list(workbook["Forward Reads"].iter_rows(values_only=True))[1][:3], ("singleB", "Sample B", 10))
+            self.assertNotEqual(unnamedReturncode, 0, "Expected an error for a read prefix without a sample name")
+            self.assertIn("pairedA", unnamedStderr)
+            self.assertFalse(os.path.exists(pairedFile))
 
 class TestFastaGrabber(unittest.TestCase):
     def write_fastas(self, tmpDir):

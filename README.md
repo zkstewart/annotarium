@@ -60,6 +60,7 @@ annotarium is written in Python and requires a modern version 3. It makes use of
 - pandas (https://pandas.pydata.org/)
 - ncls (https://pypi.org/project/ncls)
 - pyfaidx (https://github.com/mdshw5/pyfaidx)
+- xlsxwriter (https://github.com/jmcnamara/XlsxWriter); only needed for `qc fastqc tabulate`
 
 annotarium has been developed on Linux and within Windows Subsystem for Linux (WSL), but at this stage is likely to be fully Windows compatible.
 

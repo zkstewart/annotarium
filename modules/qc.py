@@ -21,6 +21,7 @@ from parsing import GzCapableWriter, FILE_CONTIG_HEADER
 from assembly import get_fasta_lengths
 from compleasm import CompleasmTable, SetOptimiser, SetSummary, SUMMARY_COLUMNS, \
     parse_compleasm_summary, sample_name_from_summary
+from fastqc import STAT_COLUMNS, parse_fastqc_zip, compare_reads, write_fastqc_workbook
 
 def check_table_contigs(table, contigLengths, fastaFile, runDirectory):
     '''
@@ -173,3 +174,55 @@ def qc_compleasm_tabulate(args):
             values = [ stats.get(column, ".") for column in columns ]
             fileOut.write("\t".join([sampleName, lineage] + values) + "\n")
     print(f"# Tabulated {len(rows)} result(s) from {len(args.summaryFiles)} compleasm summary file(s)")
+
+def qc_fastqc_tabulate(args):
+    '''
+    Parameters:
+        args.samples -- a dictionary where keys are read prefixes and values are lists of one
+                        (single-end) or two (paired-end) '_fastqc.zip' files, forward first
+        args.sampleNames -- a dictionary of read prefixes to sample names, or None
+        args.outputFileName -- a string indicating the location to write the .xlsx file to
+    '''
+    # Parse FastQC results for each read file
+    forwardStats, reverseStats = {}, {}
+    for prefix, zipFiles in args.samples.items():
+        forwardStats[prefix] = parse_fastqc_zip(zipFiles[0])
+        if len(zipFiles) == 2:
+            reverseStats[prefix] = parse_fastqc_zip(zipFiles[1])
+    
+    # Find all flag columns in the order FastQC reports them
+    flagColumns = {} # dict acts as an ordered set
+    for stats in list(forwardStats.values()) + list(reverseStats.values()):
+        for column in stats:
+            if not column in STAT_COLUMNS:
+                flagColumns[column] = None
+    flagColumns = list(flagColumns)
+    columns = STAT_COLUMNS + flagColumns
+    
+    # Format a sheet per read direction, and a combined sheet if any reads are paired
+    sheets = []
+    if reverseStats != {}:
+        combinedRows = []
+        for prefix in args.samples:
+            combined = compare_reads(forwardStats[prefix], reverseStats.get(prefix), flagColumns)
+            combinedRows.append([ prefix ] + [ combined[column] for column in columns ])
+        sheets.append(["Combined Reads", [ "read_prefix" ] + columns, combinedRows])
+    
+    for sheetName, sheetStats in [ ("Forward Reads", forwardStats), ("Reverse Reads", reverseStats) ]:
+        if sheetStats == {}:
+            continue
+        rows = [ [ prefix ] + [ stats.get(column, ".") for column in columns ] for prefix, stats in sheetStats.items() ]
+        sheets.append([sheetName, [ "read_prefix" ] + columns, rows])
+    
+    # Add sample names to the first sheet
+    if args.sampleNames is not None:
+        sheetName, header, rows = sheets[0]
+        header.insert(1, "sample_name")
+        for row in rows:
+            row.insert(1, args.sampleNames[row[0]])
+    
+    # Write output and report on results
+    write_fastqc_workbook(sheets, args.outputFileName)
+    numPaired = len(reverseStats)
+    print(f"# Tabulated {len(args.samples)} sample(s); {numPaired} paired-end and " +
+          f"{len(args.samples) - numPaired} single-end")
