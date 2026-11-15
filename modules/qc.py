@@ -17,7 +17,7 @@ import os, sys
 from collections import Counter
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from parsing import GzCapableWriter, FILE_CONTIG_HEADER
+from parsing import GzCapableWriter, FILE_CONTIG_HEADER, parse_fasta_stats_file
 from assembly import get_fasta_lengths
 from compleasm import CompleasmTable, SetOptimiser, SetSummary, SUMMARY_COLUMNS, \
     parse_compleasm_summary, sample_name_from_summary
@@ -226,3 +226,31 @@ def qc_fastqc_tabulate(args):
     numPaired = len(reverseStats)
     print(f"# Tabulated {len(args.samples)} sample(s); {numPaired} paired-end and " +
           f"{len(args.samples) - numPaired} single-end")
+
+def qc_fasta_tabulate(args):
+    '''
+    Parameters:
+        args.statsFiles -- a list of 'fasta stats' output file locations
+        args.suffix -- a string of the suffix to remove from file names to obtain sample names
+        args.outputFileName -- a string indicating the location to write the table to
+    '''
+    COLUMNS = ["total_bp", "num_contigs", "shortest_contig", "longest_contig",
+               "n50_contig", "median_contig", "mean_contig", "n_bp"]
+    
+    # Parse each statistics file, named after its file name minus the suffix
+    sampleStats = {}
+    sampleFiles = {}
+    for statsFile in args.statsFiles:
+        sampleName = os.path.basename(statsFile)[:-len(args.suffix)]
+        if sampleName in sampleFiles:
+            raise ValueError(f"'{statsFile}' and '{sampleFiles[sampleName]}' would both be named " +
+                             f"'{sampleName}'; rename one of them")
+        sampleFiles[sampleName] = statsFile
+        sampleStats[sampleName] = parse_fasta_stats_file(statsFile)
+    
+    # Write output table
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        fileOut.write("\t".join(["sample"] + COLUMNS) + "\n")
+        for sampleName, stats in sorted(sampleStats.items()):
+            fileOut.write("\t".join([sampleName] + [ str(stats[column]) for column in COLUMNS ]) + "\n")
+    print(f"# Tabulated {len(sampleStats)} FASTA statistics file(s)")

@@ -35,7 +35,7 @@ from modules.validation import validate_ap, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
     validate_qc, validate_qc_compleasm, validate_qc_compleasm_set_optimise, validate_qc_compleasm_tabulate, \
-        validate_qc_fastqc, validate_qc_fastqc_tabulate, \
+        validate_qc_fasta, validate_qc_fasta_tabulate, validate_qc_fastqc, validate_qc_fastqc_tabulate, \
     validate_rm, validate_rm_classify, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
@@ -52,7 +52,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.msa import fasta_to_msa
-from modules.qc import qc_compleasm_set_optimise, qc_compleasm_tabulate, qc_fastqc_tabulate
+from modules.qc import qc_compleasm_set_optimise, qc_compleasm_tabulate, qc_fasta_tabulate, qc_fastqc_tabulate
 from modules.repeatmasker import repeatmasker_classify
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -1453,6 +1453,41 @@ def main():
                                    required=True,
                                    help="Location to write summary table")
     
+    # QC > fasta subparser
+    qcfastaparser = subQCParsers.add_parser("fasta",
+                                            parents=[p],
+                                            add_help=False,
+                                            help="FASTA statistics handling")
+    
+    subQCFastaParsers = qcfastaparser.add_subparsers(dest="qcFastaMode",
+                                                     required=True)
+    
+    # QC > fasta > tabulate mode
+    qcfatabulateparser = subQCFastaParsers.add_parser("tabulate",
+                                                      parents=[p],
+                                                      add_help=False,
+                                                      help="Tabulate 'fasta stats' output files")
+    qcfatabulateparser.add_argument("-i", dest="inputDirectories",
+                                    required=True,
+                                    nargs="+",
+                                    help="""Location of one or more directories to search (recursively)
+                                    for 'fasta stats' output files""")
+    qcfatabulateparser.add_argument("-o", dest="outputFileName",
+                                    required=True,
+                                    help="Location to write statistics table")
+    qcfatabulateparser.add_argument("--suffix", dest="suffix",
+                                    required=False,
+                                    help="""Optionally, specify the file suffix that identifies
+                                    'fasta stats' output files; default == '.stats'""",
+                                    default=".stats")
+    qcfatabulateparser.add_argument("--depth", dest="maxDepth",
+                                    required=False,
+                                    type=int,
+                                    help="""Optionally, specify how many directory levels to search,
+                                    where 1 searches only the -i directories themselves; default == 0
+                                    for no limit""",
+                                    default=0)
+    
     # QC > fastqc subparser
     qcfastqcparser = subQCParsers.add_parser("fastqc",
                                              parents=[p],
@@ -1844,6 +1879,12 @@ def qcmain(args):
             print("## compleasm results tabulation ##")
             validate_qc_compleasm_tabulate(args) # sets args.summaryFiles
             qc_compleasm_tabulate(args)
+    if args.qcMode == "fasta":
+        validate_qc_fasta(args)
+        if args.qcFastaMode == "tabulate":
+            print("## FASTA statistics tabulation ##")
+            validate_qc_fasta_tabulate(args) # sets args.statsFiles
+            qc_fasta_tabulate(args)
     if args.qcMode == "fastqc":
         validate_qc_fastqc(args)
         if args.fastqcMode == "tabulate":

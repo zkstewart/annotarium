@@ -18,7 +18,7 @@ import os, re, shutil, sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
     parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches, \
-    parse_file_contig_tsv
+    parse_file_contig_tsv, find_files_with_suffix
 from compleasm import locate_compleasm_table, find_compleasm_summaries
 from fastqc import find_fastqc_samples, parse_sample_names_tsv
 
@@ -1243,6 +1243,42 @@ def validate_qc_compleasm_tabulate(args):
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+
+def validate_qc_fasta(args):
+    '''
+    Validation for arguments common to all "qc fasta" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_qc_fasta_tabulate(args):
+    '''
+    Validation for arguments used in "qc fasta tabulate" mode.
+    '''
+    # Validate numeric and string arguments
+    if args.maxDepth < 0:
+        raise ValueError("--depth must be >= 0")
+    if args.suffix == "":
+        raise ValueError("--suffix must not be empty")
+    
+    # Validate input directories and locate statistics files
+    for inputDirectory in args.inputDirectories:
+        if not os.path.isdir(inputDirectory):
+            raise DirectoryNotFoundError(f"Input directory (-i {inputDirectory}) does not exist!")
+    args.inputDirectories = [ os.path.abspath(inputDirectory) for inputDirectory in args.inputDirectories ]
+    
+    statsFiles = []
+    for inputDirectory in args.inputDirectories:
+        statsFiles += find_files_with_suffix(inputDirectory, args.suffix, args.maxDepth)
+    args.statsFiles = list(dict.fromkeys(statsFiles)) # deduplicate in order
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
+    args.statsFiles = [ f for f in args.statsFiles if f != args.outputFileName ]
+    
+    if args.statsFiles == []:
+        raise FileNotFoundError(f"No files ending in '{args.suffix}' were found in the -i directories")
 
 def validate_qc_fastqc(args):
     '''

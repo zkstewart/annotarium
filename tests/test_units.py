@@ -27,7 +27,7 @@ from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_inter
     build_footprints, infer_orientations, unique_coverage, group_coverage, pair_homologous_contigs
 from modules.repeatmasker import parse_class_family_tsv
 from modules.compleasm import CompleasmTable, SetOptimiser, parse_compleasm_summary
-from modules.parsing import parse_file_contig_tsv
+from modules.parsing import parse_file_contig_tsv, parse_fasta_stats_file, find_files_with_suffix
 from modules.fastqc import parse_fastqc_zip, compare_reads
 
 # Specify data locations
@@ -1512,6 +1512,65 @@ class TestFastQCTabulate(unittest.TestCase):
             self.assertNotEqual(unnamedReturncode, 0, "Expected an error for a read prefix without a sample name")
             self.assertIn("pairedA", unnamedStderr)
             self.assertFalse(os.path.exists(pairedFile))
+
+class TestFastaTabulate(unittest.TestCase):
+    def write_stats(self, fastaContent, statsFile):
+        '''
+        Writes a FASTA file then runs 'fasta stats' on it to produce statsFile.
+        '''
+        fastaFile = statsFile + ".fasta"
+        with open(fastaFile, "w") as fileOut:
+            fileOut.write(fastaContent)
+        cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "fasta", "stats", "-i", fastaFile, "-o", statsFile ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        self.assertEqual(returncode, 0, f"Expected no error from 'fasta stats' but got: {stderr}")
+
+    def test_parse_fasta_stats_file(self):
+        "Test that 'fasta stats' output is parsed with N base pairs tallied"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            statsFile = os.path.join(tmpDir, "genome.stats")
+            self.write_stats(">a\nACGTNNNNac\n>b\nNNACG\n>c\nACGTACGTACGTAAAA\n", statsFile)
+
+            # Act
+            stats = parse_fasta_stats_file(statsFile)
+
+            # Assert
+            self.assertEqual(stats, { "total_bp": 31, "num_contigs": 3, "shortest_contig": 5, "longest_contig": 16,
+                                      "n50_contig": 16, "median_contig": 10, "mean_contig": 10, "n_bp": 6 })
+
+    def test_tabulate(self):
+        "Test that statistics files are found recursively, limited by depth, and tabulated by sample"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            nestedDir = os.path.join(tmpDir, "runs", "nested")
+            os.makedirs(nestedDir)
+            self.write_stats(">x\nACGTNNNN\n", os.path.join(tmpDir, "runs", "b.stats"))
+            self.write_stats(">y\nACGT\n>z\nNN\n", os.path.join(nestedDir, "a.stats"))
+            oldFile = os.path.join(tmpDir, "old.stats")
+            with open(oldFile, "w") as fileOut:
+                fileOut.write("Genome size (bp): 63\nNumber of contigs: 1\n")
+            outputFile = os.path.join(tmpDir, "table.tsv")
+            cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "fasta", "tabulate",
+                    "-i", os.path.join(tmpDir, "runs"), "-o", outputFile ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+            shallowFiles = find_files_with_suffix(os.path.join(tmpDir, "runs"), ".stats", maxDepth=1)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            with open(outputFile, "r") as fileIn:
+                table = [ line.rstrip("\n").split("\t") for line in fileIn ]
+            self.assertEqual(table, [
+                ["sample", "total_bp", "num_contigs", "shortest_contig", "longest_contig",
+                 "n50_contig", "median_contig", "mean_contig", "n_bp"],
+                ["a", "6", "2", "2", "4", "4", "3", "3", "2"],
+                ["b", "8", "1", "8", "8", "8", "8", "8", "4"]
+            ])
+            self.assertEqual([ os.path.basename(f) for f in shallowFiles ], ["b.stats"])
+            with self.assertRaises(ValueError):
+                parse_fasta_stats_file(oldFile)
 
 class TestFastaGrabber(unittest.TestCase):
     def write_fastas(self, tmpDir):

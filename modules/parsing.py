@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import codecs
+import os
 import gzip
 import math
 import re
@@ -129,6 +130,84 @@ def parse_list_file(fileName):
             if l != "":
                 listedValues.append(l)
     return listedValues
+
+def find_files_with_suffix(directory, suffix, maxDepth=0):
+    '''
+    Recursively locates all files with a suffix nested under a directory.
+    
+    Parameters:
+        directory -- a string indicating the location of the directory to search through
+        suffix -- a string indicating the suffix that identifies relevant files
+        maxDepth -- an integer giving how many directory levels to search, where 1 searches
+                    only within directory itself; 0 imposes no limit
+    Returns:
+        foundFiles -- a sorted list of file locations
+    '''
+    foundFiles = []
+    for root, subdirs, files in os.walk(directory):
+        depth = 1 if root == directory else os.path.relpath(root, directory).count(os.sep) + 2
+        if maxDepth > 0 and depth >= maxDepth:
+            subdirs.clear() # stop descending further
+        foundFiles += [ os.path.join(root, f) for f in files if f.endswith(suffix) ]
+    return sorted(foundFiles)
+
+FASTA_STATS_HEADER = "\tlength\tnum_lowercase\tnum_n"
+FASTA_STATS_FOOTERS = { "#Total": "total_bp", "#N50": "n50_contig", "#Median": "median_contig", "#Mean": "mean_contig" }
+
+def parse_fasta_stats_file(fileName):
+    '''
+    Parses a statistics file written by 'fasta stats' with format like:
+            length  num_lowercase   num_n
+    chr1    1000    5               0
+    chr2    ...     ...             ...
+    #Total  9999
+    #N50    5000
+    #Median 3333
+    #Mean   3300
+    
+    Parameters:
+        fileName -- a string indicating the location of the statistics file to parse
+    Returns:
+        stats -- a dictionary with keys total_bp, num_contigs, shortest_contig, longest_contig,
+                 n50_contig, median_contig, mean_contig and n_bp, and integer values
+    '''
+    stats = {}
+    lengths = []
+    numN = 0
+    with read_gz_file(fileName) as fileIn:
+        for lineNum, line in enumerate(fileIn, start=1):
+            l = line.rstrip("\r\n")
+            if lineNum == 1:
+                if not l.startswith(FASTA_STATS_HEADER):
+                    raise ValueError(f"'{fileName}' does not start with the 'fasta stats' header line; only " +
+                                     "statistics files written by 'annotarium fasta stats' are supported")
+                continue
+            if l.strip() == "":
+                continue
+            
+            sl = l.split("\t")
+            try:
+                if sl[0] in FASTA_STATS_FOOTERS:
+                    stats[FASTA_STATS_FOOTERS[sl[0]]] = int(float(sl[1]))
+                elif sl[0].startswith("#"):
+                    raise ValueError
+                else:
+                    contigID, length, numLowercase, contigN = sl
+                    lengths.append(int(float(length)))
+                    numN += int(float(contigN))
+            except ValueError:
+                raise ValueError(f"Line {lineNum} of '{fileName}' is not a valid 'fasta stats' line ('{l}')")
+    
+    missingFooters = [ footer for footer, key in FASTA_STATS_FOOTERS.items() if not key in stats ]
+    if missingFooters != [] or lengths == []:
+        raise ValueError(f"'{fileName}' is incomplete; it should have contig lines and " +
+                         f"{', '.join(FASTA_STATS_FOOTERS)} lines")
+    
+    stats["num_contigs"] = len(lengths)
+    stats["shortest_contig"] = min(lengths)
+    stats["longest_contig"] = max(lengths)
+    stats["n_bp"] = numN
+    return stats
 
 FILE_CONTIG_HEADER = "#fasta_file\tcontig_id\n"
 
