@@ -130,6 +130,29 @@ def parse_list_file(fileName):
                 listedValues.append(l)
     return listedValues
 
+FILE_CONTIG_HEADER = "#fasta_file\tcontig_id\n"
+
+def parse_file_contig_tsv(fileName):
+    '''
+    Parses a two column TSV pairing FASTA file basenames (column 1) to contig IDs (column 2),
+    such as those written by 'qc compleasm set_optimise'. Lines starting with '#' are skipped.
+    
+    Returns:
+        pairs -- a list of (fastaBasename, contigID) tuples in file order, or None if any
+                 line does not have exactly two tab-separated values (i.e., the file is not
+                 in this format)
+    '''
+    pairs = []
+    with read_gz_file(fileName) as fileIn:
+        for line in fileIn:
+            if line.startswith("#") or line.strip() == "":
+                continue
+            sl = line.rstrip("\r\n").split("\t")
+            if len(sl) != 2 or sl[0].strip() == "" or sl[1].strip() == "":
+                return None
+            pairs.append((sl[0].strip(), sl[1].strip()))
+    return pairs if pairs != [] else None
+
 def iterate_phasing_tsv(fileName, requiredColumns=["contig", "length", "partition", "status"]):
     '''
     Iterates through the rows of the TSV file produced by 'assembly phase'.

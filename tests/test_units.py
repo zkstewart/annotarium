@@ -26,6 +26,8 @@ from modules.ragtag import RagTag
 from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
     build_footprints, infer_orientations, unique_coverage, group_coverage, pair_homologous_contigs
 from modules.repeatmasker import parse_class_family_tsv
+from modules.compleasm import CompleasmTable, SetOptimiser
+from modules.parsing import parse_file_contig_tsv
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1224,6 +1226,165 @@ class TestRepeatMaskerClassify(unittest.TestCase):
                 classes = { line.split()[9]: line.split()[10] for line in fileIn.read().splitlines()[3:] }
             self.assertEqual(classes["MURKO_RE46_RIX"], "Unspecified", "Missing IDs should keep their label")
             self.assertEqual(classes["CITME_RE4_RLC_sire"], "LTR/Copia")
+
+def write_compleasm_run(runDir, rows, lineage="test_odb12"):
+    '''
+    Writes a minimal compleasm output directory.
+    
+    Parameters:
+        runDir -- a string indicating the compleasm directory to create
+        rows -- a list of (geneID, status, contigID) tuples; contigID is None for missing genes
+    '''
+    lineageDir = os.path.join(runDir, lineage)
+    os.makedirs(lineageDir)
+    with open(os.path.join(lineageDir, "full_table_busco_format.tsv"), "w") as fileOut:
+        fileOut.write("# compleasm version is: 0.2.10\n")
+        fileOut.write(f"# The lineage dataset is: {lineage} (Creation date: 2026-05-22, number of genomes: 1, number of BUSCOs: 3)\n")
+        fileOut.write("# Busco id\tStatus\tSequence\tGene Start\tGene End\tStrand\tScore\tLength\n")
+        for geneID, status, contigID in rows:
+            if contigID is None:
+                fileOut.write(f"{geneID}\t{status}\n")
+            else:
+                fileOut.write(f"{geneID}\t{status}\t{contigID}\t1\t100\t+\t100\t100\n")
+
+class TestCompleasmSetOptimise(unittest.TestCase):
+    # A translocation leaves gene A twice in hap1 and gene B twice in hap2; swapping
+    # either chromosome between sets makes both genes single-copy in both sets
+    HAP1 = [ ("A", "Duplicated", "chr1"), ("A", "Duplicated", "chr2"), ("B", "Missing", None), ("C", "Complete", "ptg1") ]
+    HAP2 = [ ("A", "Missing", None), ("B", "Duplicated", "chr1"), ("B", "Duplicated", "chr2"), ("C", "Missing", None) ]
+
+    def write_inputs(self, tmpDir):
+        '''
+        Returns:
+            runDirs -- a list of compleasm directory locations
+            fastaFiles -- a list of FASTA file locations, with sequences named after their file and contig
+        '''
+        runDirs, fastaFiles = [], []
+        for hap, rows, contigs in [ ("hap1", self.HAP1, ["chr1", "chr2", "ptg1"]), ("hap2", self.HAP2, ["chr1", "chr2"]) ]:
+            runDir = os.path.join(tmpDir, f"{hap}_compleasm")
+            write_compleasm_run(runDir, rows)
+            fastaFile = os.path.join(tmpDir, f"{hap}.fasta")
+            with open(fastaFile, "w") as fileOut:
+                for contig in contigs:
+                    fileOut.write(f">{contig}\n{'ACGT' if hap == 'hap1' else 'TTTT'}{contig[-1]}\n")
+            runDirs.append(runDir)
+            fastaFiles.append(fastaFile)
+        return runDirs, fastaFiles
+
+    def test_optimiser(self):
+        "Test that swapping a translocated chromosome makes duplicated genes single-copy in each set"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            runDirs, fastaFiles = self.write_inputs(tmpDir)
+            tables = [ CompleasmTable(os.path.join(runDir, "test_odb12", "full_table_busco_format.tsv")) for runDir in runDirs ]
+            contigGenes = { (fileIndex, contigID): genes for fileIndex, table in enumerate(tables)
+                            for contigID, genes in table.completeHits.items() }
+            groups = { "chr1": [0, 1], "chr2": [0, 1], "ptg1": [0] }
+            optimiser = SetOptimiser(contigGenes, groups, 2)
+
+            # Act
+            assignment = optimiser.optimise()
+
+            # Assert
+            self.assertEqual(tables[0].lineage, "test_odb12")
+            self.assertEqual(tables[0].genes, {"A", "B", "C"})
+            self.assertEqual(optimiser.score(optimiser.identity()), (3, 1), "Only C is single-copy before optimising")
+            self.assertEqual(optimiser.score(assignment), (5, 5), "A and B should be single-copy in both sets")
+            self.assertNotIn("ptg1", optimiser.groups, "Contigs in one file only should not move")
+            contigSets = optimiser.contig_sets(assignment, [["chr1", "chr2", "ptg1"], ["chr1", "chr2"]])
+            self.assertEqual(contigSets[(0, "ptg1")], 0)
+            self.assertNotEqual(contigSets[(0, "chr1")], contigSets[(0, "chr2")])
+
+    def test_set_optimise_to_grabber(self):
+        "Test that 'qc compleasm set_optimise' output TSVs can be given to 'fasta grabber'"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            runDirs, fastaFiles = self.write_inputs(tmpDir)
+            outputDir = os.path.join(tmpDir, "sets")
+            optimiseCmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "compleasm", "set_optimise",
+                            "-i", *runDirs, "-f", *fastaFiles, "-o", outputDir ]
+            set1Fasta = os.path.join(tmpDir, "set1.fasta")
+            grabCmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "fasta", "grabber",
+                        "-i", *fastaFiles, "-s", os.path.join(outputDir, "set1.tsv"), "-o", set1Fasta ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(optimiseCmd)
+            self.assertEqual(returncode, 0, f"Expected no error from 'set_optimise' but got: {stderr}")
+            grabReturncode, grabStdout, grabStderr = run_subprocess(grabCmd)
+
+            # Assert
+            pairs = parse_file_contig_tsv(os.path.join(outputDir, "set1.tsv"))
+            self.assertEqual(len(pairs), 3, "set1 should hold chr1, chr2 and ptg1")
+            self.assertEqual({ fastaName for fastaName, _ in pairs }, {"hap1.fasta", "hap2.fasta"},
+                             "set1 should draw contigs from both files")
+            self.assertEqual(grabReturncode, 0, f"Expected no error from 'fasta grabber' but got: {grabStderr}")
+            grabbed = { record.id: str(record) for record in parse_fasta(set1Fasta) }
+            expected = { contigID: ("ACGT" if fastaName == "hap1.fasta" else "TTTT") + contigID[-1] for fastaName, contigID in pairs }
+            self.assertEqual(grabbed, expected)
+
+class TestFastaGrabber(unittest.TestCase):
+    def write_fastas(self, tmpDir):
+        fastaFiles = []
+        for name, seq in [ ("a.fasta", "AAAA"), ("b.fasta", "CCCC") ]:
+            fastaFile = os.path.join(tmpDir, name)
+            with open(fastaFile, "w") as fileOut:
+                fileOut.write(f">chr1 shared\n{seq}\n>only_{name[0]}\n{seq}\n")
+            fastaFiles.append(fastaFile)
+        return fastaFiles
+
+    def run_grabber(self, fastaFiles, values, outputFile, extraArgs=[]):
+        cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "fasta", "grabber",
+                "-i", *fastaFiles, "-s", *values, "-o", outputFile ] + extraArgs
+        return run_subprocess(cmd)
+
+    def test_parse_file_contig_tsv(self):
+        "Test that two column TSVs are parsed and that list files are not mistaken for them"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            tsvFile = os.path.join(tmpDir, "pairs.tsv")
+            listFile = os.path.join(tmpDir, "ids.txt")
+            with open(tsvFile, "w") as fileOut:
+                fileOut.write("#fasta_file\tcontig_id\na.fasta\tchr1\nb.fasta\tonly_b\n")
+            with open(listFile, "w") as fileOut:
+                fileOut.write("chr1\nonly_b\n")
+
+            # Act
+            pairs = parse_file_contig_tsv(tsvFile)
+            notPairs = parse_file_contig_tsv(listFile)
+
+            # Assert
+            self.assertEqual(pairs, [ ("a.fasta", "chr1"), ("b.fasta", "only_b") ])
+            self.assertIsNone(notPairs)
+
+    def test_multiple_files(self):
+        "Test that IDs unique across files are grabbed, while shared IDs need a TSV naming their file"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            fastaFiles = self.write_fastas(tmpDir)
+            tsvFile = os.path.join(tmpDir, "pairs.tsv")
+            with open(tsvFile, "w") as fileOut:
+                fileOut.write("b.fasta\tchr1\n")
+            badTsvFile = os.path.join(tmpDir, "bad.tsv")
+            with open(badTsvFile, "w") as fileOut:
+                fileOut.write("c.fasta\tchr1\n")
+            outputs = [ os.path.join(tmpDir, f"out{i}.fasta") for i in range(4) ]
+
+            # Act
+            uniqueResult = self.run_grabber(fastaFiles, ["only_a", tsvFile], outputs[0])
+            ambiguousResult = self.run_grabber(fastaFiles, ["chr1"], outputs[1])
+            badNameResult = self.run_grabber(fastaFiles, [badTsvFile], outputs[2])
+            removeResult = self.run_grabber(fastaFiles, ["only_a"], outputs[3], ["-b", "remove"])
+
+            # Assert
+            self.assertEqual(uniqueResult[0], 0, f"Expected no error but got: {uniqueResult[2]}")
+            self.assertEqual([ (record.id, str(record)) for record in parse_fasta(outputs[0]) ],
+                             [ ("only_a", "AAAA"), ("chr1", "CCCC") ])
+            self.assertNotEqual(ambiguousResult[0], 0, "Expected an error for an ID in multiple files")
+            self.assertIn("more than one -i FASTA file", ambiguousResult[2])
+            self.assertNotEqual(badNameResult[0], 0, "Expected an error for a TSV file name not given to -i")
+            self.assertIn("do not match any -i file name", badNameResult[2])
+            self.assertNotEqual(removeResult[0], 0, "Expected an error for duplicate output IDs")
+            self.assertIn("would be written more than once", removeResult[2])
 
 if __name__ == '__main__':
     unittest.main()

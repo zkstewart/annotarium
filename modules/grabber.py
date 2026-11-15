@@ -43,44 +43,97 @@ def index_names(records):
         nameIndex[description] = record.name
     return nameIndex
 
+def describe_target(target):
+    'Formats a (fastaBasename, value) target for messages'
+    fastaName, value = target
+    return f"'{value}'" if fastaName is None else f"'{value}' (in {fastaName})"
+
+def locate_targets(targets, fastaNames, nameIndexes):
+    '''
+    Parameters:
+        targets -- a list of (fastaBasename, value) tuples where fastaBasename is None
+                   if the value may come from any FASTA file
+        fastaNames -- a list of FASTA file basenames, in -i order
+        nameIndexes -- a list of dictionaries as returned by index_names(), in -i order
+    Returns:
+        foundKeys -- a dictionary (acting as an ordered set) of (fileIndex, seqID) keys
+        missingTargets -- a list of targets which were not found
+    '''
+    fileIndices = { fastaName: fileIndex for fileIndex, fastaName in enumerate(fastaNames) }
+    foundKeys = {}
+    missingTargets = []
+    ambiguousTargets = []
+    for target in targets:
+        fastaName, value = target
+        if fastaName is None:
+            candidates = [ fileIndex for fileIndex, nameIndex in enumerate(nameIndexes) if value in nameIndex ]
+        else:
+            fileIndex = fileIndices[fastaName]
+            candidates = [ fileIndex ] if value in nameIndexes[fileIndex] else []
+        
+        if len(candidates) == 0:
+            missingTargets.append(target)
+        elif len(candidates) > 1:
+            ambiguousTargets.append(target)
+        else:
+            fileIndex = candidates[0]
+            foundKeys[(fileIndex, nameIndexes[fileIndex][value])] = None
+    
+    if ambiguousTargets != []:
+        exampleValues = ", ".join([ describe_target(x) for x in ambiguousTargets[:10] ]) + (", ..." if len(ambiguousTargets) > 10 else "")
+        raise ValueError(f"{len(ambiguousTargets)} value(s) given to -s were found in more than one -i FASTA " +
+                         f"file; these include {exampleValues}. Use a two column TSV of 'fasta_file' and " +
+                         "'contig_id' values to specify which file each should come from")
+    return foundKeys, missingTargets
+
 # fasta > grabber
 def fasta_grabber(args):
     '''
     Parameters:
-        args.sequences -- a list of sequence IDs and/or descriptions to retrieve or remove
+        args.fastaFiles -- a list of FASTA file locations
+        args.targets -- a list of (fastaBasename, value) tuples where values are sequence IDs
+                        or descriptions to retrieve or remove, and fastaBasename is None if the
+                        value may come from any FASTA file
         args.behaviour -- a string of 'retrieve' or 'remove'
     '''
-    records = Fasta(args.fastaFile)
-    nameIndex = index_names(records)
+    fastaNames = [ os.path.basename(fastaFile) for fastaFile in args.fastaFiles ]
+    records = [ Fasta(fastaFile) for fastaFile in args.fastaFiles ]
+    nameIndexes = [ index_names(fileRecords) for fileRecords in records ]
 
     # Locate the requested sequences
-    foundIDs = {} # dict acts as an ordered set
-    missingValues = []
-    for value in args.sequences:
-        if value in nameIndex:
-            foundIDs[nameIndex[value]] = None
-        else:
-            missingValues.append(value)
+    foundKeys, missingTargets = locate_targets(args.targets, fastaNames, nameIndexes)
 
     # Report on any values that were not found
-    if missingValues != []:
-        exampleValues = ", ".join([ f"'{x}'" for x in missingValues[:10] ]) + (", ..." if len(missingValues) > 10 else "")
+    if missingTargets != []:
+        exampleValues = ", ".join([ describe_target(x) for x in missingTargets[:10] ]) + (", ..." if len(missingTargets) > 10 else "")
+        message = (f"{len(missingTargets)} value(s) given to -s were not found in the FASTA file(s) " +
+                   f"as a sequence ID or description; these include {exampleValues}")
         if args.behaviour == "retrieve":
-            raise ValueError(f"{len(missingValues)} value(s) given to -s were not found in the FASTA file " +
-                             f"as a sequence ID or description; these include {exampleValues}")
+            raise ValueError(message)
         else:
-            print(f"# WARNING: {len(missingValues)} value(s) given to -s were not found in the FASTA file " +
-                  f"as a sequence ID or description; these include {exampleValues}")
+            print(f"# WARNING: {message}")
+
+    # Determine which sequences to write
+    if args.behaviour == "retrieve":
+        outputKeys = list(foundKeys) # in the order they were given
+    else:
+        outputKeys = [ (fileIndex, record.name) # in -i order then file order
+                       for fileIndex, fileRecords in enumerate(records)
+                       for record in fileRecords
+                       if not (fileIndex, record.name) in foundKeys ]
+
+    # Make sure the output won't contain duplicate sequence IDs
+    seenIDs = {}
+    for fileIndex, seqID in outputKeys:
+        if seqID in seenIDs:
+            raise ValueError(f"'{seqID}' would be written more than once (from '{fastaNames[seenIDs[seqID]]}' " +
+                             f"and '{fastaNames[fileIndex]}'); output sequence IDs must be unique")
+        seenIDs[seqID] = fileIndex
 
     # Write sequences to file
-    if args.behaviour == "retrieve":
-        outputIDs = list(foundIDs) # in the order they were given
-    else:
-        outputIDs = [ record.name for record in records if not record.name in foundIDs ] # in file order
-
     with GzCapableWriter(args.outputFileName) as fileOut:
-        for seqID in outputIDs:
-            record = records[seqID]
+        for fileIndex, seqID in outputKeys:
+            record = records[fileIndex][seqID]
             description = record.long_name.rstrip("\r")
             fileOut.write(f">{description}\n{str(record)}\n")
-    print(f"# {len(outputIDs)} sequence(s) written to output")
+    print(f"# {len(outputKeys)} sequence(s) written to output")

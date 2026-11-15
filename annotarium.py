@@ -34,6 +34,7 @@ from modules.validation import validate_ap, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
+    validate_qc, validate_qc_compleasm, validate_qc_compleasm_set_optimise, \
     validate_rm, validate_rm_classify, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
@@ -50,6 +51,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.msa import fasta_to_msa
+from modules.qc import qc_compleasm_set_optimise
 from modules.repeatmasker import repeatmasker_classify
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -725,15 +727,17 @@ def main():
                                                 parents=[p],
                                                 add_help=False,
                                                 help="Retrieve or remove sequences by ID")
-    fgrabberparser.add_argument("-i", dest="fastaFile",
+    fgrabberparser.add_argument("-i", dest="fastaFiles",
                                 required=True,
-                                help="Location of FASTA file")
+                                nargs="+",
+                                help="Location of one or more FASTA files")
     fgrabberparser.add_argument("-s", dest="sequences",
                                 required=True,
                                 nargs="+",
-                                help="""Specify one or more sequence IDs and/or files listing sequence
-                                IDs; values must exactly match a sequence's ID (everything up to the
-                                first whitespace) or its full description""")
+                                help="""Specify one or more sequence IDs, files listing sequence IDs,
+                                and/or two column TSVs of 'fasta_file' (an -i file name) and
+                                'contig_id' values; values must exactly match a sequence's ID
+                                (everything up to the first whitespace) or its full description""")
     fgrabberparser.add_argument("-o", dest="outputFileName",
                                 required=True,
                                 help="Location to write FASTA file")
@@ -1390,6 +1394,50 @@ def main():
                            set to 0 for no filtering""",
                            default=0)
     
+    # QC subparser
+    qcparser = subparsers.add_parser("qc",
+                                     parents=[p],
+                                     add_help=False,
+                                     help="Genome quality control handling")
+    qcparser.set_defaults(func=qcmain)
+    
+    subQCParsers = qcparser.add_subparsers(dest="qcMode",
+                                           required=True)
+    
+    # QC > compleasm subparser
+    qccompleasmparser = subQCParsers.add_parser("compleasm",
+                                                parents=[p],
+                                                add_help=False,
+                                                help="compleasm results handling")
+    
+    subQCCompleasmParsers = qccompleasmparser.add_subparsers(dest="compleasmMode",
+                                                             required=True)
+    
+    # QC > compleasm > set_optimise mode
+    qccsetoptparser = subQCCompleasmParsers.add_parser("set_optimise",
+                                                       parents=[p],
+                                                       add_help=False,
+                                                       help="""Shuffle homologous contigs between
+                                                       haplotype sets to optimise completeness""")
+    qccsetoptparser.add_argument("-i", dest="runDirectories",
+                                 required=True,
+                                 nargs="+",
+                                 help="Location of one or more compleasm output directories, one per haplotype")
+    qccsetoptparser.add_argument("-f", dest="fastaFiles",
+                                 required=True,
+                                 nargs="+",
+                                 help="""Location of the FASTA files compleasm was run on, in the
+                                 same order as -i; homologous contigs must share an ID across files""")
+    qccsetoptparser.add_argument("-o", dest="outputDirectory",
+                                 required=True,
+                                 help="Location to write one 'fasta grabber'-compatible TSV per haplotype set")
+    qccsetoptparser.add_argument("--restarts", dest="restarts",
+                                 required=False,
+                                 type=int,
+                                 help="""Optionally, specify the number of random restarts to
+                                 optimise from; default == 30""",
+                                 default=30)
+    
     # RepeatMasker subparser
     rmparser = subparsers.add_parser("repeatmasker",
                                      parents=[p],
@@ -1479,6 +1527,10 @@ def main():
         print("## annotarium.py - Homologs (2 column IDs pair) handling ##")
         validate_p(args)
         pmain(args)
+    if args.mode == "qc":
+        print("## annotarium.py - Genome quality control handling ##")
+        validate_qc(args)
+        qcmain(args)
     if args.mode == "repeatmasker":
         print("## annotarium.py - RepeatMasker results handling ##")
         validate_rm(args)
@@ -1604,7 +1656,7 @@ def fmain(args):
         fasta_gaps_to_bed(args)
     if args.fastaMode == "grabber":
         print("## FASTA sequence grabber ##")
-        validate_f_grabber(args) # sets args.sequences as a deduplicated list
+        validate_f_grabber(args) # sets args.targets as a deduplicated list
         fasta_grabber(args)
     if args.fastaMode == "ids":
         print("## FASTA identifiers ##")
@@ -1734,6 +1786,15 @@ def irfmain(args):
     irf_to_gff3(args)
     
     print("IRF handling complete!")
+
+def qcmain(args):
+    # Split into sub-mode-specific functions
+    if args.qcMode == "compleasm":
+        validate_qc_compleasm(args)
+        if args.compleasmMode == "set_optimise":
+            print("## compleasm haplotype set optimisation ##")
+            validate_qc_compleasm_set_optimise(args) # sets args.tableFiles and args.setFileNames
+            qc_compleasm_set_optimise(args)
 
 def rmmain(args):
     # Split into sub-mode-specific functions

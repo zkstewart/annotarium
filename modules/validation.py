@@ -17,7 +17,9 @@ import os, re, shutil, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
-    parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches
+    parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches, \
+    parse_file_contig_tsv
+from compleasm import locate_compleasm_table
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -454,7 +456,7 @@ def validate_f(args):
     Validation for arguments common to all "fasta" mode commands.
     '''
     # Skip modes that take multiple input locations rather than one FASTA file
-    if args.fastaMode == "concat":
+    if args.fastaMode in ["concat", "grabber"]:
         return
 
     # Validate FASTA file
@@ -620,21 +622,43 @@ def validate_f_grabber(args):
     '''
     Validation for arguments used in "fasta grabber" mode.
     '''
-    # Parse sequence IDs and/or descriptions from values and/or files
-    parsedSequences = {} # dict acts as an ordered set
+    # Validate FASTA files
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            raise FileNotFoundError(f"FASTA file (-i {fastaFile}) does not exist!")
+    args.fastaFiles = [ os.path.abspath(fastaFile) for fastaFile in args.fastaFiles ]
+    if len(set(args.fastaFiles)) != len(args.fastaFiles):
+        raise ValueError("The same file was given more than once to -i")
+    
+    # Parse sequence IDs and/or descriptions from values, list files, and/or file+contig TSVs
+    targets = {} # dict acts as an ordered set of (fastaBasename or None, value) tuples
     for value in args.sequences:
         if not os.path.isfile(value):
-            values = [value]
+            fileTargets = [ (None, value) ]
         else:
-            values = parse_list_file(value)
-        for v in values:
+            fileTargets = parse_file_contig_tsv(value)
+            if fileTargets is None:
+                fileTargets = [ (None, v) for v in parse_list_file(value) ]
+        for fastaName, v in fileTargets:
             v = v.lstrip(">") # tolerate values copied from FASTA headers
             if v != "":
-                parsedSequences[v] = None
+                targets[(fastaName, v)] = None
     
-    if parsedSequences == {}:
+    if targets == {}:
         raise ValueError("-s did not provide any sequence IDs or descriptions to grab")
-    args.sequences = list(parsedSequences)
+    args.targets = list(targets)
+    
+    # Validate that TSV file names refer to -i files
+    fastaNames = [ os.path.basename(fastaFile) for fastaFile in args.fastaFiles ]
+    tsvNames = { fastaName for fastaName, _ in args.targets if fastaName is not None }
+    if tsvNames != set():
+        if len(set(fastaNames)) != len(fastaNames):
+            raise ValueError("-i files must have unique file names when -s gives a two column TSV, " +
+                             "since the TSV identifies files by name")
+        unknownNames = tsvNames - set(fastaNames)
+        if unknownNames != set():
+            raise ValueError(f"File name(s) in the -s TSV ({', '.join(sorted(unknownNames))}) do not match " +
+                             f"any -i file name ({', '.join(fastaNames)})")
     
     # Validate output file name
     args.outputFileName = os.path.abspath(args.outputFileName)
@@ -1142,6 +1166,62 @@ def validate_p_to_bedpe(args):
     args.gff3File2 = os.path.abspath(args.gff3File2)
     if not os.path.isfile(args.gff3File2):
         raise FileNotFoundError(f"GFF3 file (-g2 {args.gff3File2}) does not exist!")
+
+def validate_qc(args):
+    '''
+    Validation for arguments common to all "qc" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_qc_compleasm(args):
+    '''
+    Validation for arguments common to all "qc compleasm" mode commands.
+    '''
+    pass # no arguments are shared between modes yet
+
+def validate_qc_compleasm_set_optimise(args):
+    '''
+    Validation for arguments used in "qc compleasm set_optimise" mode.
+    '''
+    # Validate compleasm directories and locate their tables
+    for runDirectory in args.runDirectories:
+        if not os.path.isdir(runDirectory):
+            raise DirectoryNotFoundError(f"compleasm directory (-i {runDirectory}) does not exist!")
+    args.runDirectories = [ os.path.abspath(runDirectory) for runDirectory in args.runDirectories ]
+    if len(set(args.runDirectories)) != len(args.runDirectories):
+        raise ValueError("The same directory was given more than once to -i")
+    args.tableFiles = [ locate_compleasm_table(runDirectory) for runDirectory in args.runDirectories ]
+    
+    # Validate FASTA files
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            raise FileNotFoundError(f"FASTA file (-f {fastaFile}) does not exist!")
+    args.fastaFiles = [ os.path.abspath(fastaFile) for fastaFile in args.fastaFiles ]
+    fastaNames = [ os.path.basename(fastaFile) for fastaFile in args.fastaFiles ]
+    if len(set(fastaNames)) != len(fastaNames):
+        raise ValueError("-f files must have unique file names, since output TSVs identify files by name")
+    
+    if len(args.fastaFiles) != len(args.runDirectories):
+        raise ValueError(f"-i and -f must be given the same number of values ({len(args.runDirectories)} " +
+                         f"!= {len(args.fastaFiles)}), since each compleasm run is paired with its FASTA file")
+    if len(args.fastaFiles) < 2:
+        raise ValueError("At least two haplotypes must be given to -i and -f")
+    
+    # Validate numeric arguments
+    if args.restarts < 0:
+        raise ValueError("--restarts must be >= 0")
+    
+    # Validate output directory and files
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
+    if not os.path.isdir(args.outputDirectory):
+        os.makedirs(args.outputDirectory)
+        print(f"# Output directory '{args.outputDirectory}' has been created as part of argument validation")
+    
+    args.setFileNames = [ os.path.join(args.outputDirectory, f"set{setIndex+1}.tsv")
+                          for setIndex in range(len(args.fastaFiles)) ]
+    for setFileName in args.setFileNames:
+        if os.path.exists(setFileName):
+            raise FileExistsError(f"Output file '{setFileName}' already exists!")
 
 def validate_rm(args):
     '''
