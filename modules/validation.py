@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import parse_list_file, read_gz_file, parse_fasta_to_lengths, get_chunking_points, \
     parse_gff3_regions, parse_fasta_regions, parse_phasing_tsv, parse_phasing_matches, \
     parse_file_contig_tsv
-from compleasm import locate_compleasm_table
+from compleasm import locate_compleasm_table, find_compleasm_summaries
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -1222,6 +1222,26 @@ def validate_qc_compleasm_set_optimise(args):
     for setFileName in args.setFileNames:
         if os.path.exists(setFileName):
             raise FileExistsError(f"Output file '{setFileName}' already exists!")
+
+def validate_qc_compleasm_tabulate(args):
+    '''
+    Validation for arguments used in "qc compleasm tabulate" mode.
+    '''
+    # Validate input directories and locate their summary files
+    for inputDirectory in args.inputDirectories:
+        if not os.path.isdir(inputDirectory):
+            raise DirectoryNotFoundError(f"Input directory (-i {inputDirectory}) does not exist!")
+    args.inputDirectories = [ os.path.abspath(inputDirectory) for inputDirectory in args.inputDirectories ]
+    
+    args.summaryFiles = list(dict.fromkeys(find_compleasm_summaries(args.inputDirectories))) # deduplicate in order
+    if args.summaryFiles == []:
+        raise FileNotFoundError("No compleasm 'summary.txt' files were found in the -i directories " +
+                                "or their subdirectories")
+    
+    # Validate output file name
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"Output file (-o {args.outputFileName}) already exists!")
 
 def validate_rm(args):
     '''

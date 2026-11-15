@@ -34,7 +34,7 @@ from modules.validation import validate_ap, \
     validate_g_mp, validate_g_mp_reformat, validate_g_mp_resolve, \
     validate_irf, \
     validate_p, validate_p_annotate, validate_p_to, validate_p_to_bedpe, \
-    validate_qc, validate_qc_compleasm, validate_qc_compleasm_set_optimise, \
+    validate_qc, validate_qc_compleasm, validate_qc_compleasm_set_optimise, validate_qc_compleasm_tabulate, \
     validate_rm, validate_rm_classify, \
     validate_rnammer
 from modules.annotable import annotable_filter, annotable_goseq, annotable_ids, annotable_tx2gene
@@ -51,7 +51,7 @@ from modules.gff3 import gff3_annotate, gff3_filter, gff3_merge, gff3_pcr, gff3_
 from modules.homologs import homologs_annotate, homologs_to_bedpe
 from modules.irf import irf_to_gff3
 from modules.msa import fasta_to_msa
-from modules.qc import qc_compleasm_set_optimise
+from modules.qc import qc_compleasm_set_optimise, qc_compleasm_tabulate
 from modules.repeatmasker import repeatmasker_classify
 from modules.rnammer import rnammer_reformat
 from _version import __version__
@@ -1438,6 +1438,20 @@ def main():
                                  optimise from; default == 30""",
                                  default=30)
     
+    # QC > compleasm > tabulate mode
+    qcctabulateparser = subQCCompleasmParsers.add_parser("tabulate",
+                                                         parents=[p],
+                                                         add_help=False,
+                                                         help="Tabulate compleasm summary statistics")
+    qcctabulateparser.add_argument("-i", dest="inputDirectories",
+                                   required=True,
+                                   nargs="+",
+                                   help="""Location of one or more compleasm output directories
+                                   and/or directories containing them""")
+    qcctabulateparser.add_argument("-o", dest="outputFileName",
+                                   required=True,
+                                   help="Location to write summary table")
+    
     # RepeatMasker subparser
     rmparser = subparsers.add_parser("repeatmasker",
                                      parents=[p],
@@ -1795,6 +1809,10 @@ def qcmain(args):
             print("## compleasm haplotype set optimisation ##")
             validate_qc_compleasm_set_optimise(args) # sets args.tableFiles and args.setFileNames
             qc_compleasm_set_optimise(args)
+        if args.compleasmMode == "tabulate":
+            print("## compleasm results tabulation ##")
+            validate_qc_compleasm_tabulate(args) # sets args.summaryFiles
+            qc_compleasm_tabulate(args)
 
 def rmmain(args):
     # Split into sub-mode-specific functions

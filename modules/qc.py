@@ -19,7 +19,8 @@ from collections import Counter
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from parsing import GzCapableWriter, FILE_CONTIG_HEADER
 from assembly import get_fasta_lengths
-from compleasm import CompleasmTable, SetOptimiser, SetSummary
+from compleasm import CompleasmTable, SetOptimiser, SetSummary, SUMMARY_COLUMNS, \
+    parse_compleasm_summary, sample_name_from_summary
 
 def check_table_contigs(table, contigLengths, fastaFile, runDirectory):
     '''
@@ -141,3 +142,34 @@ def qc_compleasm_set_optimise(args):
                 for fileIndex in groups[contigID]:
                     if afterSets[(fileIndex, contigID)] == setIndex:
                         fileOut.write(f"{fastaNames[fileIndex]}\t{contigID}\n")
+
+def qc_compleasm_tabulate(args):
+    '''
+    Parameters:
+        args.summaryFiles -- a list of compleasm 'summary.txt' file locations
+        args.outputFileName -- a string indicating the location to write the table to
+    '''
+    # Parse each summary into one row per sample and lineage
+    rows = []
+    sampleFiles = {}
+    for summaryFile in args.summaryFiles:
+        sampleName = sample_name_from_summary(summaryFile)
+        if sampleName in sampleFiles:
+            raise ValueError(f"'{summaryFile}' and '{sampleFiles[sampleName]}' would both be named " +
+                             f"'{sampleName}'; rename one of their directories")
+        sampleFiles[sampleName] = summaryFile
+        
+        for lineage, stats in parse_compleasm_summary(summaryFile).items():
+            rows.append((sampleName, lineage, stats))
+    
+    # Only genome runs report 'I', so drop it if every run was of proteins
+    columns = [ column for column in SUMMARY_COLUMNS
+                if column != "I" or any("I" in stats for _, _, stats in rows) ]
+    
+    # Write output table, with '.' for values a run type does not report
+    with GzCapableWriter(args.outputFileName) as fileOut:
+        fileOut.write("\t".join(["sample", "lineage"] + columns) + "\n")
+        for sampleName, lineage, stats in rows:
+            values = [ stats.get(column, ".") for column in columns ]
+            fileOut.write("\t".join([sampleName, lineage] + values) + "\n")
+    print(f"# Tabulated {len(rows)} result(s) from {len(args.summaryFiles)} compleasm summary file(s)")

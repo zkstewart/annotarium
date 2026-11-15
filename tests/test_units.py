@@ -26,7 +26,7 @@ from modules.ragtag import RagTag
 from modules.phasing import HaplotypePartitioner, deduplicate_query, merge_intervals, \
     build_footprints, infer_orientations, unique_coverage, group_coverage, pair_homologous_contigs
 from modules.repeatmasker import parse_class_family_tsv
-from modules.compleasm import CompleasmTable, SetOptimiser
+from modules.compleasm import CompleasmTable, SetOptimiser, parse_compleasm_summary
 from modules.parsing import parse_file_contig_tsv
 
 # Specify data locations
@@ -1321,6 +1321,62 @@ class TestCompleasmSetOptimise(unittest.TestCase):
             grabbed = { record.id: str(record) for record in parse_fasta(set1Fasta) }
             expected = { contigID: ("ACGT" if fastaName == "hap1.fasta" else "TTTT") + contigID[-1] for fastaName, contigID in pairs }
             self.assertEqual(grabbed, expected)
+
+class TestCompleasmTabulate(unittest.TestCase):
+    GENOME = "## lineage: test_odb12\nS:90.00%, 90\nD:5.00%, 5\nF:2.00%, 2\nI:1.00%, 1\nM:2.00%, 2\nN:100\n"
+    PROTEIN = "## lineage: test_odb12\nS:80.00%, 80\nD:10.00%, 10\nF:5.00%, 5\nM:5.00%, 5\nN:100\n"
+
+    def write_summary(self, runDir, content):
+        os.makedirs(runDir)
+        with open(os.path.join(runDir, "summary.txt"), "w") as fileOut:
+            fileOut.write("# compleasm version is: 0.2.10\n" + content)
+
+    def run_tabulate(self, inputDirs, outputFile):
+        cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "compleasm", "tabulate",
+                "-i", *inputDirs, "-o", outputFile ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+        with open(outputFile, "r") as fileIn:
+            return [ line.rstrip("\n").split("\t") for line in fileIn ]
+
+    def test_parse_summary(self):
+        "Test that each lineage of a summary file is parsed separately"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            runDir = os.path.join(tmpDir, "run")
+            self.write_summary(runDir, self.GENOME + self.PROTEIN.replace("test_odb12", "other_odb12"))
+
+            # Act
+            lineageStats = parse_compleasm_summary(os.path.join(runDir, "summary.txt"))
+
+            # Assert
+            self.assertEqual(list(lineageStats), ["test_odb12", "other_odb12"])
+            self.assertEqual(lineageStats["test_odb12"]["I"], "1.00")
+            self.assertEqual(lineageStats["other_odb12"]["N"], "100")
+
+    def test_tabulate(self):
+        "Test that protein runs get '.' for 'I' alongside genome runs, and lack 'I' on their own"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            mixedDir, proteinDir = os.path.join(tmpDir, "mixed"), os.path.join(tmpDir, "proteins")
+            self.write_summary(os.path.join(mixedDir, "genome_compleasm"), self.GENOME)
+            self.write_summary(os.path.join(mixedDir, "protein.compleasm"), self.PROTEIN)
+            self.write_summary(os.path.join(proteinDir, "protein"), self.PROTEIN)
+
+            # Act
+            mixed = self.run_tabulate([mixedDir], os.path.join(tmpDir, "mixed.tsv"))
+            proteins = self.run_tabulate([proteinDir], os.path.join(tmpDir, "proteins.tsv"))
+
+            # Assert
+            self.assertEqual(mixed, [
+                ["sample", "lineage", "S", "D", "F", "M", "I", "N"],
+                ["genome", "test_odb12", "90.00", "5.00", "2.00", "2.00", "1.00", "100"],
+                ["protein", "test_odb12", "80.00", "10.00", "5.00", "5.00", ".", "100"]
+            ])
+            self.assertEqual(proteins, [
+                ["sample", "lineage", "S", "D", "F", "M", "N"],
+                ["protein", "test_odb12", "80.00", "10.00", "5.00", "5.00", "100"]
+            ])
 
 class TestFastaGrabber(unittest.TestCase):
     def write_fastas(self, tmpDir):

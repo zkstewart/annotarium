@@ -25,6 +25,9 @@ TABLE_NAME = "full_table_busco_format.tsv"
 COMPLETE_STATUSES = ["Complete", "Duplicated"]
 FRAGMENT_STATUSES = ["Fragmented", "Interspersed"]
 LINEAGE_HEADER = "# The lineage dataset is: "
+SUMMARY_NAME = "summary.txt"
+SUMMARY_LINEAGE = "## lineage: "
+SUMMARY_COLUMNS = ["S", "D", "F", "M", "I", "N"] # 'I' is only reported by genome runs
 
 def locate_compleasm_table(runDirectory):
     '''
@@ -46,6 +49,72 @@ def locate_compleasm_table(runDirectory):
         raise ValueError(f"'{runDirectory}' contains results for more than one lineage; give the " +
                          "location of the lineage subdirectory you want to use instead")
     return tableFiles[0]
+
+def find_compleasm_summaries(directories):
+    '''
+    Parameters:
+        directories -- a list of strings indicating the locations of compleasm output
+                       directories, and/or directories containing them
+    Returns:
+        summaryFiles -- a list of 'summary.txt' file locations, sorted within each directory
+    '''
+    summaryFiles = []
+    for directory in directories:
+        summaryFile = os.path.join(directory, SUMMARY_NAME)
+        if os.path.isfile(summaryFile):
+            summaryFiles.append(summaryFile)
+        else:
+            summaryFiles += sorted(glob(os.path.join(directory, "*", SUMMARY_NAME)))
+    return summaryFiles
+
+def sample_name_from_summary(summaryFile):
+    '''
+    Names a sample after the directory holding its 'summary.txt' file, minus any
+    'compleasm' suffix (e.g., 'hap1_compleasm' becomes 'hap1').
+    '''
+    sampleName = os.path.basename(os.path.dirname(summaryFile))
+    if sampleName.endswith("compleasm") and sampleName != "compleasm":
+        sampleName = sampleName[:-len("compleasm")].rstrip("_.")
+    return sampleName
+
+def parse_compleasm_summary(summaryFile):
+    '''
+    Parameters:
+        summaryFile -- a string indicating the location of a compleasm 'summary.txt' file
+    Returns:
+        lineageStats -- a dictionary with structure like:
+                        {
+                            "eudicotyledons_odb12": { "S": "98.75", "D": "0.89", ..., "N": "2805" },
+                            ...
+                        }
+                        where values are percentages, except for 'N' which is the number of genes
+    '''
+    lineageStats = {}
+    lineage = None
+    with read_gz_file(summaryFile) as fileIn:
+        for line in fileIn:
+            l = line.strip()
+            if l.startswith(SUMMARY_LINEAGE):
+                lineage = l[len(SUMMARY_LINEAGE):].strip()
+                lineageStats[lineage] = {}
+                continue
+            if l.startswith("#") or l == "":
+                continue
+            if lineage is None or not ":" in l:
+                raise ValueError(f"'{summaryFile}' has an unexpected line ('{l}'); is it a compleasm summary?")
+            
+            # Lines look like 'S:98.75%, 2770' or 'N:2805'
+            key, value = l.split(":", maxsplit=1)
+            lineageStats[lineage][key] = value.split("%")[0].strip()
+    
+    # Make sure each lineage has the expected statistics
+    if lineageStats == {}:
+        raise ValueError(f"No lineage results were found in '{summaryFile}'; is it a compleasm summary?")
+    for lineage, stats in lineageStats.items():
+        missingKeys = [ key for key in SUMMARY_COLUMNS if key != "I" and not key in stats ]
+        if missingKeys != []:
+            raise ValueError(f"'{summaryFile}' lacks {', '.join(missingKeys)} value(s) for lineage '{lineage}'")
+    return lineageStats
 
 class CompleasmTable:
     '''
