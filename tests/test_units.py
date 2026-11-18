@@ -1385,22 +1385,27 @@ class TestCompleasmTabulate(unittest.TestCase):
                 ["protein", "test_odb12", "80.00", "10.00", "5.00", "5.00", "100"]
             ])
 
-def write_fastqc_zip(outputDir, readName, flags, totalReads, lengthCounts):
+def write_fastqc_zip(outputDir, readName, flags, totalReads, lengthCounts, version="0.12.1"):
     '''
-    Writes a minimal FastQC '_fastqc.zip' file in the FastQC 0.12.1 format.
+    Writes a minimal FastQC '_fastqc.zip' file in the FastQC 0.12.1 format, or the 0.13.0
+    format (which no longer reports sequences flagged as poor quality).
     
     Parameters:
         flags -- a list of 'pass', 'warn' or 'fail' values, one per module in MODULES
         lengthCounts -- a list of (length, count) tuples where length can be a range like '35-39'
+        version -- OPTIONAL; a string of '0.12.1' or '0.13.0'
     '''
     MODULES = ["Basic Statistics", "Per base sequence quality", "Per sequence quality scores",
                "Sequence Length Distribution", "Adapter Content"]
-    lines = ["##FastQC\t0.12.1"]
+    lines = [f"##FastQC\t{version}"]
     for module, flag in zip(MODULES, flags):
         lines.append(f">>{module}\t{flag}")
         if module == "Basic Statistics":
             lines += ["#Measure\tValue", f"Filename\t{readName}.fq.gz", f"Total Sequences\t{totalReads}",
-                      "Total Bases\t1 Mbp", "Sequences flagged as poor quality\t3", "%GC\t38"]
+                      "Total Bases\t1 Mbp"]
+            if version == "0.12.1":
+                lines.append("Sequences flagged as poor quality\t3")
+            lines.append("%GC\t38")
         elif module == "Sequence Length Distribution":
             lines += ["#Length\tCount"] + [ f"{length}\t{count}" for length, count in lengthCounts ]
         lines.append(">>END_MODULE")
@@ -1459,6 +1464,47 @@ class TestFastQCTabulate(unittest.TestCase):
                                    "a": "SAME", "b": "DIFFERS", "c": "." })
         self.assertEqual(single, { "total_reads": 10, "approx_bp": 1000, "low_quality_reads": 1,
                                    "a": ".", "b": ".", "c": "." })
+
+    def test_compare_reads_unreported(self):
+        "Test that statistics FastQC 0.13 doesn't report (None) are '.' rather than summed"
+        # Arrange
+        forward = { "total_reads": 10, "approx_bp": 1000, "low_quality_reads": None, "a": "PASS" }
+        reverse = { "total_reads": 10, "approx_bp": 900, "low_quality_reads": None, "a": "PASS" }
+
+        # Act
+        paired = compare_reads(forward, reverse, ["a"])
+        single = compare_reads(forward, None, ["a"])
+
+        # Assert
+        self.assertEqual(paired, { "total_reads": 20, "approx_bp": 1900, "low_quality_reads": ".", "a": "SAME" })
+        self.assertEqual(single, { "total_reads": 10, "approx_bp": 1000, "low_quality_reads": ".", "a": "." })
+
+    @unittest.skipIf(not EXCEL_AVAILABLE, "xlsxwriter and openpyxl are needed to write and read workbooks")
+    def test_tabulate_fastqc_0_13(self):
+        "Test that FastQC 0.13 results, which lack sequences flagged as poor quality, are tabulated"
+        with tempfile.TemporaryDirectory() as tmpDir:
+            # Arrange
+            pairedDir, singleDir = os.path.join(tmpDir, "pairedA"), os.path.join(tmpDir, "singleB")
+            os.makedirs(pairedDir)
+            os.makedirs(singleDir)
+            write_fastqc_zip(pairedDir, "pairedA_1", ["pass"] * 5, 100, [("100", 100)], version="0.13.0")
+            write_fastqc_zip(pairedDir, "pairedA_2", ["pass"] * 5, 100, [("100", 100)], version="0.13.0")
+            write_fastqc_zip(singleDir, "singleB", ["pass"] * 5, 10, [("50", 10)], version="0.13.0")
+            outputFile = os.path.join(tmpDir, "fastqc.xlsx")
+            cmd = [ sys.executable, os.path.join(baseDir, "annotarium.py"), "qc", "fastqc", "tabulate",
+                    "-i", pairedDir, singleDir, "-o", outputFile ]
+
+            # Act
+            returncode, stdout, stderr = run_subprocess(cmd)
+
+            # Assert
+            self.assertEqual(returncode, 0, f"Expected no error but got: {stderr}")
+            workbook = openpyxl.load_workbook(outputFile)
+            combined = list(workbook["Combined Reads"].iter_rows(values_only=True))
+            self.assertEqual(combined[1][:4], ("pairedA", 200, 20000, "."))
+            self.assertEqual(combined[2][:4], ("singleB", 10, 500, "."))
+            forward = list(workbook["Forward Reads"].iter_rows(values_only=True))
+            self.assertEqual(forward[1][:4], ("pairedA", 100, 10000, "."))
 
     @unittest.skipIf(not EXCEL_AVAILABLE, "xlsxwriter and openpyxl are needed to write and read workbooks")
     def test_tabulate(self):

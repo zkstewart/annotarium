@@ -21,7 +21,7 @@ from parsing import GzCapableWriter, FILE_CONTIG_HEADER, parse_fasta_stats_file
 from assembly import get_fasta_lengths
 from compleasm import CompleasmTable, SetOptimiser, SetSummary, SUMMARY_COLUMNS, \
     parse_compleasm_summary, sample_name_from_summary
-from fastqc import STAT_COLUMNS, parse_fastqc_zip, compare_reads, write_fastqc_workbook
+from fastqc import STAT_COLUMNS, NULL_VALUE, null_if_none, parse_fastqc_zip, compare_reads, write_fastqc_workbook
 
 def check_table_contigs(table, contigLengths, fastaFile, runDirectory):
     '''
@@ -211,7 +211,7 @@ def qc_fastqc_tabulate(args):
     for sheetName, sheetStats in [ ("Forward Reads", forwardStats), ("Reverse Reads", reverseStats) ]:
         if sheetStats == {}:
             continue
-        rows = [ [ prefix ] + [ stats.get(column, ".") for column in columns ] for prefix, stats in sheetStats.items() ]
+        rows = [ [ prefix ] + [ null_if_none(stats.get(column, NULL_VALUE)) for column in columns ] for prefix, stats in sheetStats.items() ]
         sheets.append([sheetName, [ "read_prefix" ] + columns, rows])
     
     # Add sample names to the first sheet

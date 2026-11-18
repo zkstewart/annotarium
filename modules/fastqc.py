@@ -34,6 +34,16 @@ COLOURS = {
     "DIFFERS": "#FFCC00"
 }
 
+def null_if_none(value):
+    '''
+    Parameters:
+        value -- any value, or None where a statistic is unreported (e.g., low_quality_reads
+                 from FastQC 0.13 onwards)
+    Returns:
+        value -- the value unchanged, or NULL_VALUE ('.') if it was None
+    '''
+    return NULL_VALUE if value is None else value
+
 def find_fastqc_samples(directories):
     '''
     Locates FastQC results, where each sample's '_fastqc.zip' files (one for single-end,
@@ -116,7 +126,8 @@ def parse_fastqc_zip(zipFile):
                      "per_base_sequence_quality": "WARNING",
                      ...
                  }
-                 where flag keys are in the order FastQC reports them
+                 where flag keys are in the order FastQC reports them; low_quality_reads
+                 is None for FastQC 0.13 onwards, which no longer reports it
     '''
     with zipfile.ZipFile(zipFile, "r") as archive:
         dataNames = [ name for name in archive.namelist() if os.path.basename(name) == DATA_NAME ]
@@ -160,15 +171,16 @@ def compare_reads(forward, reverse, flagColumns):
         flagColumns -- a list of the flag keys to compare
     Returns:
         combined -- a dictionary of summed read statistics, and flag keys with values of
-                    'SAME' or 'DIFFERS'; values are '.' where reads are single-end or a
-                    flag is absent from both files
+                    'SAME' or 'DIFFERS'; values are '.' where reads are single-end, a
+                    flag is absent from both files, or a statistic is unreported (None)
     '''
     if reverse is None:
-        combined = { column: forward[column] for column in STAT_COLUMNS }
+        combined = { column: null_if_none(forward[column]) for column in STAT_COLUMNS }
         combined.update({ column: NULL_VALUE for column in flagColumns })
         return combined
 
-    combined = { column: forward[column] + reverse[column] for column in STAT_COLUMNS }
+    combined = { column: NULL_VALUE if forward[column] is None or reverse[column] is None else forward[column] + reverse[column]
+                 for column in STAT_COLUMNS }
     for column in flagColumns:
         forwardFlag, reverseFlag = forward.get(column), reverse.get(column)
         if forwardFlag is None and reverseFlag is None:
